@@ -1,97 +1,127 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Donna
 
-# Getting Started
+Donna is an AI personal assistant for mobile, built with React Native
+(bare workflow, TypeScript). This repo is being built in phases — see
+[NOTES.md](./NOTES.md) for the roadmap.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Phase 1 — what's built
 
-## Step 1: Start Metro
+- **App scaffold**: React Native CLI template (bare workflow, not Expo
+  Go), TypeScript, so native modules can be added freely in later phases.
+- **Navigation**: React Navigation (`native-stack`) with two stacks —
+  an auth stack (Login, Signup, Forgot Password) and an app stack (Home,
+  Settings) — switched automatically based on Firebase auth state.
+- **Authentication**: Firebase Authentication via the Firebase JS SDK —
+  email/password sign-up, sign-in, password reset, and Google Sign-In,
+  all wired to real Firebase calls (no mocked auth logic). Config is
+  `.env`-driven so no secrets are committed.
+- **Form validation**: client-side validation (email format, password
+  length, confirm-password match) plus mapped, human-readable error
+  messages for Firebase auth error codes.
+- **Tooling**: ESLint + Prettier + TypeScript configured, a `.gitignore`
+  that keeps secrets/build artifacts/keystores out of the repo, and a
+  smoke test.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+Not in this phase: the actual AI conversation features (Gemini Live,
+ambient listening) — see NOTES.md.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Project structure
 
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+```
+App.tsx                   Entry component: providers + navigator
+src/
+  components/              Shared UI (buttons, inputs, error banner, screen chrome)
+  config/
+    firebase.ts            Firebase app/auth initialization (.env-driven)
+    authService.ts         signIn/signUp/signOut/Google sign-in/password reset
+  context/AuthContext.tsx  React context exposing the current Firebase user
+  navigation/               Route types + the RootNavigator (auth vs app stack)
+  screens/                  Login, Signup, ForgotPassword, Home, Settings
+  theme/colors.ts           Shared color palette / spacing / radii
+  utils/validation.ts       Field validation + Firebase error-message mapping
+  types/                    Ambient TypeScript declarations (@env, firebase/auth)
 ```
 
-## Step 2: Build and run your app
+## Setup
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### 1. Install dependencies
 
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+```bash
+npm install
 ```
 
-### iOS
+iOS also needs CocoaPods installed once native code is added to the
+build (not required to run the JS bundle in Phase 1, but needed before
+`npm run ios`):
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
+```bash
 bundle install
+cd ios && bundle exec pod install && cd ..
 ```
 
-Then, and every time you update your native dependencies, run:
+### 2. Create a Firebase project
 
-```sh
-bundle exec pod install
+1. Go to the [Firebase console](https://console.firebase.google.com/)
+   and create a project (or use an existing one).
+2. Add a **Web app** to the project (Project settings → General → Your
+   apps → Add app → Web). You don't need Firebase Hosting — this just
+   gives you the SDK config object the JS SDK uses on every platform.
+3. Enable **Authentication** providers: Build → Authentication → Sign-in
+   method → enable **Email/Password** and **Google**.
+4. For Google Sign-In, open the Google provider's settings and copy the
+   **Web client ID** (Firebase creates this automatically) — you'll need
+   it below. This is the "Web SDK configuration" client ID, distinct
+   from any Android/iOS OAuth client.
+
+### 3. Configure environment variables
+
+```bash
+cp .env.example .env
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Fill in `.env` with the values from Project settings → General → Your
+apps → SDK setup and configuration, plus the Google web client ID from
+step 2.4 above. **Never commit `.env`** — it's already git-ignored.
 
-```sh
-# Using npm
-npm run ios
+Restart Metro after editing `.env` (`react-native-dotenv` inlines the
+values at build time, so a running bundler won't pick up changes).
 
-# OR using Yarn
-yarn ios
+### 4. Run the app
+
+```bash
+npm start
+# in another terminal
+npm run android   # or: npm run ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+### Notes on native setup (later phases)
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+- Android Google Sign-In will additionally need your debug/release SHA-1
+  fingerprint registered in the Firebase console, and (if you switch to
+  `@react-native-firebase` for native modules) `android/app/google-services.json`
+  / `ios/GoogleService-Info.plist` downloaded from the console. Both
+  filenames are already git-ignored — see `.gitignore`.
+- The JS SDK approach used here needs no native config files to work;
+  those become relevant if a later phase adds native Firebase modules.
 
-## Step 3: Modify your app
+## Scripts
 
-Now that you have successfully run the app, let's make changes!
+| Command                | What it does                          |
+| ----------------------- | -------------------------------------- |
+| `npm start`             | Start the Metro bundler                |
+| `npm run android`       | Build & run on Android                 |
+| `npm run ios`           | Build & run on iOS                     |
+| `npm test`              | Run the Jest test suite                |
+| `npm run lint`          | Lint with ESLint                       |
+| `npm run format`        | Format with Prettier                   |
+| `npm run format:check`  | Check formatting without writing       |
+| `npm run typecheck`     | Type-check with `tsc --noEmit`         |
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## Troubleshooting
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- **"Firebase config is missing" warning on start**: you haven't created
+  `.env` yet, or it's still using empty placeholder values. Follow
+  Setup steps 2–3 above.
+- **Google Sign-In fails immediately**: double check `GOOGLE_WEB_CLIENT_ID`
+  in `.env` is the *Web* client ID from the Firebase console's Google
+  provider settings, not an Android/iOS client ID.
