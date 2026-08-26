@@ -1,8 +1,10 @@
 # Development notes
 
-This is **Phase 1 of N** in building Donna, an AI personal assistant
-mobile app. Each phase is scoped tightly and committed/pushed
-incrementally to `main`.
+Donna, an AI personal assistant mobile app, was built in **three
+phases**, each scoped tightly and committed/pushed incrementally to
+`main`. Phase 3 (below) is the last planned phase — see its "What a
+human must verify" section and README.md "What a human needs to do
+next" for exactly what's left before this is a real, shippable app.
 
 ## Phase 1 (this phase) — App shell & authentication
 
@@ -174,15 +176,188 @@ here and needs a real device pass:
   actually appear and resolve the way `usePermissionStatuses.ts`
   expects?
 
-## What's coming next
+## Phase 3 (final phase) — Ambient background listening mode
 
-- **Phase 3 (planned): Ambient background listening mode** — always-on
-  or wake-word-triggered listening so Donna can respond without an
-  explicit "start conversation" action, gated on a connected Bluetooth
-  device (per the original project brief), plus the background-task
-  work that the bare-workflow choice in Phase 1 was made to support.
-  The permission-status plumbing and Bluetooth manifest/plist entries
-  added in Phase 2 are there specifically so Phase 3 can build on them
-  rather than starting from scratch.
+Scope: always-on background listening so Donna can respond without an
+explicit "start conversation" action, hard-gated so she may only ever
+speak out loud through a connected Bluetooth device — never the phone's
+own speaker — plus the persistent listening indicator, kill switch, and
+one-time confirmation dialog the brief specifically asked for. Built on
+top of Phase 2's permission-status plumbing and Bluetooth manifest/plist
+entries, which existed specifically to make this phase possible.
 
-Scope for that phase is intentionally not started here.
+This phase was built across two work sessions in this sandbox; the first
+session committed and pushed the safety-critical logic and both native
+platforms' capture code (Bluetooth-route gating, ambient
+preferences + confirmation dialog, `src/native/ambientAudio.ts`, the
+Android foreground service, the iOS native module) before hitting its
+usage limit mid-edit on `geminiLive.ts`. The second session verified the
+working tree was clean (no partial edit had actually landed — the
+interrupted edit never made it to disk) and built the remaining
+orchestration layer described below from there.
+
+### The layers, bottom to top
+
+- **`src/audio/audioRoute.ts`** (from the first session): the single
+  source of truth for "is a Bluetooth output connected right now?" —
+  `isBluetoothOutputActive` / `canDonnaSpeakThroughThisRoute`. Pure,
+  dependency-free, fails closed on anything malformed or unrecognized.
+  Unit tested.
+- **`src/config/ambientLive.ts`**: the ambient persona
+  (`AMBIENT_SYSTEM_PROMPT`), the client-enforced silence convention
+  (`AMBIENT_SILENCE_TOKEN` / `shouldSuppressAmbientReply` — from the
+  first session), and `shouldPlayAmbientTurn` (added in the second
+  session), which combines that content gate with the Bluetooth gate
+  above into the one question the orchestration layer asks per turn.
+  All pure, all unit tested.
+- **`src/config/geminiLive.ts`**: `GeminiLiveSession` (Phase 2) gained
+  one small change — its constructor now takes an optional setup-message
+  builder (defaulting to `buildSetupMessage`, Phase 2's hold-to-talk
+  persona), so ambient mode can pass `buildAmbientSetupMessage` and reuse
+  the exact same websocket session shell (connect/send/parse/close)
+  rather than forking the class. This was the edit the first session was
+  mid-way through when it was cut off; it landed cleanly in the second
+  session with no trace of the interrupted attempt left in the working
+  tree.
+- **`src/native/ambientAudio.ts`** (first session) /
+  `android/.../ambient/*.kt` (first session) /
+  `ios/Donna/AmbientAudioModule.swift` (first session): the real native
+  capture + route-reporting halves. See their own doc comments — each is
+  extensively self-documented, especially around what's real vs.
+  honestly-limited (particularly the iOS file).
+- **`src/hooks/useAmbientMode.ts`** (second session): the orchestration
+  hook. On `enable()`: checks the native module is linked, a Gemini API
+  key is saved, and microphone permission is granted (requesting it if
+  needed) — any failure tears down and reports an error rather than
+  claiming success. On success: starts native capture, opens a
+  `GeminiLiveSession` with the ambient setup builder, forwards native mic
+  chunks into it, and buffers each turn's output transcript + audio
+  chunks as they stream in. Only at `turnComplete` does it call
+  `shouldPlayAmbientTurn` against the *live* tracked route (never a
+  stale snapshot) to decide whether to enqueue the buffered audio for
+  playback at all — a turn that fails either gate is discarded silently,
+  nothing partial is ever played. Subscribes to the native
+  "force-stopped" event (the OS reclaiming the foreground service, an
+  iOS interruption) and treats it exactly like the user tapping the kill
+  switch. Persists on/off intent and the one-time-confirmation flag via
+  `preferences.ts` (Phase 2), and attempts a best-effort resume on mount
+  only if both are true — any resume failure flips the persisted intent
+  back off rather than leaving a broken "on" state.
+  - Not unit-tested directly, matching this project's existing
+    convention for side-effecting session/native wiring (`GeminiLiveSession`
+    and `ConversationScreen` are the same) — the logic worth testing in
+    isolation is the pure gate it calls (`shouldPlayAmbientTurn`), which
+    *is* tested, and the native-bridge fallback path it depends on
+    (`__tests__/ambientAudio.test.ts`, from the first session).
+- **`src/context/AmbientModeContext.tsx`** (second session): hosts
+  exactly one `useAmbientMode()` instance for the whole signed-in app.
+  This matters: the hook starts a real background native capture and a
+  real websocket session, so it must not be re-instantiated every time a
+  screen mounts/unmounts, or navigating to and from the Ambient Mode
+  screen would restart (or worse, duplicate) the whole feature.
+- **`src/components/AmbientListeningBanner.tsx`** /
+  **`src/screens/AmbientModeScreen.tsx`** (second session): the UI. The
+  banner is mounted once, above the screen stack in `RootNavigator.tsx`
+  (not inside any individual screen), specifically so the "persistent"
+  part of "persistent visual + haptic listening indicator" is actually
+  true — it stays visible, with its Stop button reachable, no matter
+  which screen is on top. The screen itself hosts the toggle, the
+  one-time confirmation `Alert`, and a plain-English explanation.
+- **Haptics**: `useAmbientMode.ts` calls React Native's built-in
+  `Vibration` API (core, not a new native dependency) on the same
+  listening/speaking transitions the banner animates — a deliberate
+  choice over adding a dedicated haptics library, since that would mean
+  another unverified native dependency in a phase that already has two
+  new ones (the Android service, the iOS module). Needs
+  `android.permission.VIBRATE` in the manifest (added); no iOS
+  entitlement needed.
+
+### Design choices worth flagging explicitly
+
+- **Buffer-then-decide, not stream-then-gate.** Ambient mode could have
+  started playing each audio chunk as it arrived and aborted mid-reply if
+  the gate later failed. Instead it buffers the whole turn (transcript +
+  audio) and only decides once `turnComplete` fires. This trades a small
+  amount of latency for correctness: neither gate (content, Bluetooth)
+  can be evaluated with full confidence until the turn is actually
+  finished, and "briefly played a word through the wrong output before
+  cutting it off" is a strictly worse failure mode than "a beat of extra
+  delay" for a feature whose entire safety story is about *not*
+  leaking audio through the wrong route.
+- **The Bluetooth route is re-read at decision time, never cached
+  across turns.** `routeRef` is updated by the native route-change
+  event, but the actual gate check at `turnComplete` reads whatever
+  `routeRef` holds *right then* — consistent with `audioRoute.ts`'s own
+  doc comment that this check "should never be cached or assumed to
+  still hold true from an earlier check."
+- **Every failure path flips the persisted "on" toggle back off.**
+  Considered leaving the persisted flag as-is on a transient error (so a
+  flaky failure wouldn't lose the user's intent), but chose the stricter
+  behavior: for a feature whose whole point is an always-listening
+  background microphone, a toggle that visibly reads "on" while nothing
+  is actually happening is a worse failure mode than making the user
+  flip it back on to retry.
+- **No dedicated haptics library.** See "Haptics" above — `Vibration` is
+  a strictly weaker approximation of real haptic feedback (no
+  distinct "tap" vs. "impact" feel, Android-only really respects
+  patterns), called out here so a future phase doesn't assume real
+  haptic-engine feedback was implemented.
+
+### What a human must verify on real hardware (Phase 3 specifically)
+
+This sandbox has no Android/iOS device or emulator, no microphone, and
+no Bluetooth hardware — everything below is implemented to match each
+platform's/API's documented behavior but **none of it has been run**:
+
+- Does the app build at all with the new Android foreground service and
+  iOS Swift module linked, under RN 0.87's architecture? (This is the
+  single biggest unknown in the repo — see README "What a human needs to
+  do next".)
+- Does the Android foreground service actually survive backgrounding and
+  screen lock, and does its persistent notification (with Stop action)
+  render correctly across Android versions (the manifest targets both
+  pre- and post-API-34 foreground-service permission requirements)?
+- Does `AudioRouteInspector.kt` report a real connected Bluetooth
+  device's type as one of the strings `BLUETOOTH_OUTPUT_TYPES` in
+  `audioRoute.ts` expects? This is the single safety-critical mapping in
+  the feature and has never seen a real device's actual reported type.
+- On iOS: does `AVAudioSession` configured `.playAndRecord` really keep
+  delivering mic input while backgrounded/locked as documented, and for
+  how long in practice? Does `AVAudioSession.currentRoute` report
+  Bluetooth types under the same string mapping in
+  `AmbientAudioModule.swift`'s `normalizedType`? Would this feature, as
+  built, actually pass App Review's 2.5.4 scrutiny of `UIBackgroundModes:
+  audio` — or does it need to be scoped down (e.g. foreground-only on
+  iOS) or backed by a PushToTalk entitlement instead?
+- Does the ambient persona reliably emit exactly `AMBIENT_SILENCE_TOKEN`
+  when it has nothing to say, against a real Gemini Live session, without
+  ever leaking the token into a genuine reply or vice versa?
+- Does the haptic pulse (`Vibration.vibrate`) actually fire and feel
+  right on real Android/iOS hardware?
+- End-to-end: with a Bluetooth device connected, does a spoken interjection
+  actually come out of it and never the phone speaker, under real
+  conditions (music playing, a phone call, the screen locked)?
+
+## Summary: the full three-phase feature set
+
+- **Phase 1**: React Native (bare, TypeScript) app shell; React
+  Navigation auth/app stacks; Firebase email/password + Google
+  authentication via the Firebase JS SDK, `.env`-driven, no native
+  config files required.
+- **Phase 2**: user-supplied, on-device-only Gemini API key
+  (`react-native-keychain`, REST-validated before saving); hold-to-talk
+  live voice conversation via Gemini's Live API (WebSocket, real mic
+  capture, real audio playback, live transcript); a save-history privacy
+  toggle; mic/Bluetooth/notification permission visibility.
+- **Phase 3**: always-on ambient listening using a second Gemini Live
+  session with a "stay quiet unless it's worth it" persona; a hard,
+  independently-testable rule that Donna may only speak through a
+  connected Bluetooth device; real Android foreground-service and iOS
+  `AVAudioEngine`-based native capture; a one-time confirmation dialog; a
+  persistent visual + haptic listening indicator with a one-tap kill
+  switch; fail-closed behavior throughout.
+
+None of the three phases has been run against real backends/hardware in
+this sandbox — every "unverified" note across this file and README.md
+still applies cumulatively. See README.md "What a human needs to do
+next" for the concrete, ordered checklist to pick this up from here.
