@@ -146,6 +146,74 @@ export function buildAudioStreamEndMessage(): string {
   return JSON.stringify({ realtimeInput: { audioStreamEnd: true } });
 }
 
+/**
+ * Decodes whatever a Live API WebSocket `onmessage` handed us into a
+ * UTF-8 string. The server sends its JSON frames as *binary* WebSocket
+ * frames — with `ws.binaryType = 'arraybuffer'` (set in `connect()`
+ * below) that arrives here as an ArrayBuffer, which this decodes by
+ * hand rather than relying on `TextDecoder` (not guaranteed to exist on
+ * Hermes/React Native without an extra polyfill). A handful of
+ * environments (older RN WebSocket shims, some test runners) may still
+ * hand back a plain string, which is passed through unchanged.
+ */
+export function decodeServerMessageData(data: unknown): string {
+  if (typeof data === 'string') return data;
+
+  const bytes =
+    data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : ArrayBuffer.isView(data as ArrayBufferView)
+        ? new Uint8Array(
+            (data as ArrayBufferView).buffer,
+            (data as ArrayBufferView).byteOffset,
+            (data as ArrayBufferView).byteLength,
+          )
+        : null;
+
+  if (!bytes) return String(data);
+
+  // Manual UTF-8 decode: JSON text is always valid UTF-8, and this
+  // avoids depending on a global TextDecoder that may not exist.
+  let out = '';
+  let i = 0;
+  while (i < bytes.length) {
+    const b0 = bytes[i];
+    if (b0 < 0x80) {
+      out += String.fromCharCode(b0);
+      i += 1;
+    } else if (b0 >= 0xc0 && b0 < 0xe0 && i + 1 < bytes.length) {
+      const cp = ((b0 & 0x1f) << 6) | (bytes[i + 1] & 0x3f);
+      out += String.fromCharCode(cp);
+      i += 2;
+    } else if (b0 >= 0xe0 && b0 < 0xf0 && i + 2 < bytes.length) {
+      const cp =
+        ((b0 & 0x0f) << 12) |
+        ((bytes[i + 1] & 0x3f) << 6) |
+        (bytes[i + 2] & 0x3f);
+      out += String.fromCharCode(cp);
+      i += 3;
+    } else if (b0 >= 0xf0 && i + 3 < bytes.length) {
+      const cp =
+        ((b0 & 0x07) << 18) |
+        ((bytes[i + 1] & 0x3f) << 12) |
+        ((bytes[i + 2] & 0x3f) << 6) |
+        (bytes[i + 3] & 0x3f);
+      // Surrogate pair for characters outside the BMP.
+      const adjusted = cp - 0x10000;
+      out += String.fromCharCode(
+        0xd800 + (adjusted >> 10),
+        0xdc00 + (adjusted & 0x3ff),
+      );
+      i += 4;
+    } else {
+      // Malformed byte — skip it rather than corrupt the rest of the
+      // decode.
+      i += 1;
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------
 // Session wrapper
 // ---------------------------------------------------------------------
@@ -192,6 +260,18 @@ export class GeminiLiveSession {
   connect(): void {
     const url = `${LIVE_WS_URL}?key=${encodeURIComponent(this.apiKey)}`;
     const ws = new WebSocket(url);
+    // The Live API sends its JSON frames over the *binary* WebSocket
+    // opcode, not the text opcode — React Native's WebSocket defaults
+    // binaryType to 'blob', which then hands onmessage a Blob (not a
+    // string) for every server message. Requesting 'arraybuffer' instead
+    // gives onmessage a plain ArrayBuffer we can UTF-8 decode ourselves,
+    // without needing a Blob-reading round trip.
+    // React Native's WebSocket really does support `binaryType` at
+    // runtime (see Libraries/WebSocket/WebSocket.js) — it's just missing
+    // from the ambient `WebSocket` type TS picks up here, so a plain
+    // assignment doesn't typecheck.
+    (ws as unknown as { binaryType: 'arraybuffer' | 'blob' }).binaryType =
+      'arraybuffer';
     this.ws = ws;
 
     ws.onopen = () => {
@@ -200,8 +280,7 @@ export class GeminiLiveSession {
     };
 
     ws.onmessage = event => {
-      const raw =
-        typeof event.data === 'string' ? event.data : String(event.data);
+      const raw = decodeServerMessageData(event.data);
       for (const serverEvent of parseLiveServerMessage(raw)) {
         this.dispatch(serverEvent);
       }
