@@ -1,6 +1,7 @@
 package com.donna
 
 import android.app.Application
+import com.donna.ambient.AmbientAudioPackage
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
@@ -14,8 +15,10 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          // Phase 3: ambient mode's native module (foreground service +
+          // audio-route bridge) isn't autolinked since it lives inside
+          // this app rather than as a separate npm package.
+          add(AmbientAudioPackage())
         },
     )
   }

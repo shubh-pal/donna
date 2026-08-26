@@ -116,4 +116,11 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Phase 3: NotificationCompat/ActivityCompat for the ambient-mode
+    // foreground service's persistent notification and permission check
+    // (android/app/src/main/java/com/donna/ambient/). react-android
+    // likely pulls in some AndroidX core transitively already, but this
+    // is declared explicitly rather than relying on that.
+    implementation("androidx.core:core-ktx:1.15.0")
 }

@@ -12,6 +12,19 @@
     <!-- Android 13+ (API 33+); ignored/unavailable on older versions. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Phase 3: ambient mode's Android foreground service. Both
+         permissions are required for a foreground service that captures
+         the microphone to keep running once the app is backgrounded or
+         the screen is locked — FOREGROUND_SERVICE is the general
+         permission every foreground service needs (all API levels);
+         FOREGROUND_SERVICE_MICROPHONE is the type-specific permission
+         Android 14+ (API 34+) additionally requires for the
+         "microphone" foreground service type declared below. Without
+         both, the OS silently stops delivering mic audio once the app
+         leaves the foreground. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -33,5 +46,18 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- Phase 3: ambient mode's foreground service — see
+           android/app/src/main/java/com/donna/ambient/AmbientForegroundService.kt.
+           exported="false": only this app may start it.
+           foregroundServiceType="microphone" is what actually lets
+           AudioRecord keep capturing once the app is backgrounded on
+           Android 10+ (and is mandatory metadata on Android 14+ for any
+           service that calls startForeground() with the microphone
+           type). -->
+      <service
+        android:name=".ambient.AmbientForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="microphone" />
     </application>
 </manifest>
