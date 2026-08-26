@@ -9,6 +9,7 @@ import SignupScreen from '../screens/SignupScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import ConversationScreen from '../screens/ConversationScreen';
 import type { AppStackParamList, AuthStackParamList } from './types';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -47,6 +48,7 @@ function AppNavigator() {
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
       <AppStack.Screen name="Home" component={HomeScreen} />
       <AppStack.Screen name="Settings" component={SettingsScreen} />
+      <AppStack.Screen name="Conversation" component={ConversationScreen} />
     </AppStack.Navigator>
   );
 }

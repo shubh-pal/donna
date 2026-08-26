@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import ScreenContainer from '../components/ScreenContainer';
+import PrimaryButton from '../components/PrimaryButton';
 import { colors, radius, spacing } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import type { AppStackParamList } from '../navigation/types';
@@ -19,22 +20,29 @@ export default function HomeScreen({ navigation }: Props) {
         <Text style={styles.greeting}>Hi {displayName},</Text>
         <Text style={styles.title}>I'm Donna.</Text>
         <Text style={styles.subtitle}>
-          Your assistant is set up. Conversation features are coming in the next
-          phase.
+          Hold the button on the Conversation screen and talk to me — add a
+          Gemini API key in Settings first if you haven't.
         </Text>
       </View>
+
+      <PrimaryButton
+        title="Talk to Donna"
+        onPress={() => navigation.navigate('Conversation')}
+      />
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>What's ready now</Text>
         <Text style={styles.cardItem}>• Account &amp; sign-in</Text>
-        <Text style={styles.cardItem}>• App navigation shell</Text>
-        <Text style={styles.cardItem}>• Secure config for what's next</Text>
+        <Text style={styles.cardItem}>• Live voice conversation mode</Text>
+        <Text style={styles.cardItem}>
+          • Your own Gemini API key, stored on-device
+        </Text>
       </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Coming soon</Text>
-        <Text style={styles.cardItem}>• Live conversation mode</Text>
         <Text style={styles.cardItem}>• Ambient background listening</Text>
+        <Text style={styles.cardItem}>• Bluetooth-gated wake word</Text>
       </View>
 
       <Text

@@ -7,6 +7,7 @@ export type AuthStackParamList = {
 export type AppStackParamList = {
   Home: undefined;
   Settings: undefined;
+  Conversation: undefined;
 };
 
 export type RootStackParamList = AuthStackParamList & AppStackParamList;
