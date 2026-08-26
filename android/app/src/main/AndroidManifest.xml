@@ -2,6 +2,16 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Phase 2: conversation mode (mic capture) and permission-status
+         checks surfaced in Settings. Bluetooth/notifications are checked
+         defensively for later phases (ambient mode) — see NOTES.md. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Android 12+ (API 31+); ignored/unavailable on older versions. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Android 13+ (API 33+); ignored/unavailable on older versions. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"

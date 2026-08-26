@@ -36,6 +36,13 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Donna needs the microphone to hear you during a conversation.</string>
+	<!-- Bluetooth isn't used for conversation mode yet, but ambient mode
+	     (Phase 3) will gate listening on a connected Bluetooth device, so
+	     the usage description is added now — see NOTES.md. -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Donna checks for a connected Bluetooth device before listening in the background.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
