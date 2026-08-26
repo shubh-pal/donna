@@ -1,10 +1,17 @@
 import React from 'react';
 import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import ScreenContainer from '../components/ScreenContainer';
 import SettingRow from '../components/SettingRow';
+import BackButton from '../components/BackButton';
+import StatusPill from '../components/StatusPill';
+import PrimaryButton from '../components/PrimaryButton';
 import { colors, radius, spacing } from '../theme/colors';
 import { useAmbientModeContext } from '../context/AmbientModeContext';
 import type { AmbientPhase } from '../hooks/useAmbientMode';
+import type { SettingsStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<SettingsStackParamList, 'AmbientMode'>;
 
 const PHASE_TEXT: Record<AmbientPhase, string> = {
   idle: 'Off.',
@@ -26,7 +33,7 @@ const CONFIRMATION_MESSAGE =
  * itself just also surfaces a Stop control via the switch for
  * discoverability.
  */
-export default function AmbientModeScreen() {
+export default function AmbientModeScreen({ navigation }: Props) {
   const {
     ready,
     phase,
@@ -63,22 +70,54 @@ export default function AmbientModeScreen() {
 
   return (
     <ScreenContainer>
-      <Text style={styles.title}>Ambient mode</Text>
+      <BackButton onPress={() => navigation.goBack()} />
+      <Text style={styles.title}>Ambient Mode</Text>
       <Text style={styles.intro}>
         Donna listens in the background and only speaks up when she has
         something worth saying — and only out loud through a connected Bluetooth
         device.
       </Text>
 
-      <View style={styles.card}>
-        <SettingRow label="Ambient mode" description={PHASE_TEXT[phase]}>
-          <Switch
-            value={enabled}
-            onValueChange={handleToggle}
-            disabled={!ready}
+      {enabled ? (
+        <View style={styles.card}>
+          <View style={styles.enabledHeader}>
+            <StatusPill label="Ambient Mode is ON" tone="success" />
+          </View>
+          <Text style={styles.enabledBody}>
+            I'll listen in the background and speak when it's worth saying
+            something.
+          </Text>
+          <PrimaryButton
+            title="Turn Off Ambient Mode"
+            variant="ghost"
+            onPress={disable}
           />
-        </SettingRow>
-      </View>
+        </View>
+      ) : (
+        <View style={styles.card}>
+          <SettingRow label="Ambient mode" description={PHASE_TEXT[phase]}>
+            <Switch
+              value={enabled}
+              onValueChange={handleToggle}
+              disabled={!ready}
+            />
+          </SettingRow>
+        </View>
+      )}
+
+      {enabled ? (
+        <View style={styles.card}>
+          <SettingRow
+            label="Bluetooth"
+            description={bluetoothConnected ? undefined : 'Not connected'}
+          >
+            <StatusPill
+              label={bluetoothConnected ? 'Connected' : 'Not connected'}
+              tone={bluetoothConnected ? 'success' : 'muted'}
+            />
+          </SettingRow>
+        </View>
+      ) : null}
 
       {!nativeAvailable ? (
         <View style={styles.card}>
@@ -93,16 +132,6 @@ export default function AmbientModeScreen() {
       {phase === 'error' && errorMessage ? (
         <View style={styles.card}>
           <Text style={styles.errorText}>{errorMessage}</Text>
-        </View>
-      ) : null}
-
-      {enabled && phase !== 'error' ? (
-        <View style={styles.card}>
-          <Text style={styles.statusLine}>
-            {bluetoothConnected
-              ? '🔊 Bluetooth connected — Donna can reply out loud.'
-              : "🔇 No Bluetooth connected — Donna is listening silently and won't speak."}
-          </Text>
         </View>
       ) : null}
 
@@ -156,9 +185,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  statusLine: {
-    color: colors.text,
+  enabledHeader: {
+    marginBottom: spacing.sm,
+  },
+  enabledBody: {
+    color: colors.textMuted,
     fontSize: 14,
+    lineHeight: 20,
+    marginBottom: spacing.xs,
   },
   sectionTitle: {
     color: colors.textMuted,

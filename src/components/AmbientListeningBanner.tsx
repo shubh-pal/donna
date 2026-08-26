@@ -101,19 +101,19 @@ export default function AmbientListeningBanner() {
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primarySoft,
   },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.primarySoft,
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   bannerError: {
-    backgroundColor: '#3A1620',
+    backgroundColor: colors.dangerSoft,
   },
   dot: {
     width: 10,
