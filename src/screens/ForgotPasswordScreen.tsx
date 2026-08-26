@@ -5,7 +5,8 @@ import ScreenContainer from '../components/ScreenContainer';
 import TextField from '../components/TextField';
 import PrimaryButton from '../components/PrimaryButton';
 import FormError from '../components/FormError';
-import { colors, spacing } from '../theme/colors';
+import BackButton from '../components/BackButton';
+import { colors, radius, spacing } from '../theme/colors';
 import { validateEmail, firebaseAuthErrorMessage } from '../utils/validation';
 import { sendPasswordReset } from '../config/authService';
 import type { AuthStackParamList } from '../navigation/types';
@@ -38,8 +39,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
+      <BackButton onPress={() => navigation.goBack()} />
       <View style={styles.header}>
-        <Text style={styles.brand}>Donna</Text>
         <Text style={styles.title}>Reset your password</Text>
         <Text style={styles.subtitle}>
           Enter your account email and we'll send you a reset link.
@@ -85,14 +86,6 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: spacing.lg,
   },
-  brand: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
-  },
   title: {
     color: colors.text,
     fontSize: 28,
@@ -104,10 +97,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   successBox: {
-    backgroundColor: 'rgba(61, 214, 140, 0.12)',
+    backgroundColor: colors.successSoft,
     borderColor: colors.success,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: radius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
   },

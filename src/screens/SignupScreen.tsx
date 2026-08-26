@@ -5,6 +5,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import TextField from '../components/TextField';
 import PrimaryButton from '../components/PrimaryButton';
 import FormError from '../components/FormError';
+import BackButton from '../components/BackButton';
 import { colors, spacing } from '../theme/colors';
 import {
   validateConfirmPassword,
@@ -70,8 +71,8 @@ export default function SignupScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
+      <BackButton onPress={() => navigation.goBack()} />
       <View style={styles.header}>
-        <Text style={styles.brand}>Donna</Text>
         <Text style={styles.title}>Create your account</Text>
         <Text style={styles.subtitle}>It takes less than a minute.</Text>
       </View>
@@ -111,15 +112,23 @@ export default function SignupScreen({ navigation }: Props) {
       />
 
       <PrimaryButton
-        title="Sign up"
+        title="Sign Up"
         onPress={handleSubmit}
         loading={submitting}
       />
+
+      <View style={styles.divider}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
       <PrimaryButton
         title="Continue with Google"
         onPress={handleGoogleSignIn}
         loading={googleSubmitting}
         variant="secondary"
+        icon={<Text style={styles.googleG}>G</Text>}
       />
 
       <View style={styles.footer}>
@@ -136,14 +145,6 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: spacing.lg,
   },
-  brand: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
-  },
   title: {
     color: colors.text,
     fontSize: 28,
@@ -153,6 +154,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 15,
     marginTop: spacing.xs,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginHorizontal: spacing.sm,
+  },
+  googleG: {
+    color: colors.primaryDark,
+    fontSize: 16,
+    fontWeight: '700',
   },
   footer: {
     flexDirection: 'row',

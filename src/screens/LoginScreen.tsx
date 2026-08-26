@@ -5,6 +5,7 @@ import ScreenContainer from '../components/ScreenContainer';
 import TextField from '../components/TextField';
 import PrimaryButton from '../components/PrimaryButton';
 import FormError from '../components/FormError';
+import BackButton from '../components/BackButton';
 import { colors, spacing } from '../theme/colors';
 import {
   validateEmail,
@@ -60,12 +61,10 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
+      <BackButton onPress={() => navigation.goBack()} />
       <View style={styles.header}>
-        <Text style={styles.brand}>Donna</Text>
         <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>
-          Sign in to pick up where you left off.
-        </Text>
+        <Text style={styles.subtitle}>Sign in to continue</Text>
       </View>
 
       <FormError message={formError} />
@@ -97,15 +96,23 @@ export default function LoginScreen({ navigation }: Props) {
       </View>
 
       <PrimaryButton
-        title="Log in"
+        title="Sign In"
         onPress={handleSubmit}
         loading={submitting}
       />
+
+      <View style={styles.divider}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
       <PrimaryButton
         title="Continue with Google"
         onPress={handleGoogleSignIn}
         loading={googleSubmitting}
         variant="secondary"
+        icon={<Text style={styles.googleG}>G</Text>}
       />
 
       <View style={styles.footer}>
@@ -121,14 +128,6 @@ export default function LoginScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   header: {
     marginBottom: spacing.lg,
-  },
-  brand: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
   },
   title: {
     color: colors.text,
@@ -148,6 +147,26 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    marginHorizontal: spacing.sm,
+  },
+  googleG: {
+    color: colors.primaryDark,
+    fontSize: 16,
+    fontWeight: '700',
   },
   footer: {
     flexDirection: 'row',
