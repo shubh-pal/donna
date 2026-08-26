@@ -73,3 +73,17 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Environment variables / secrets
+# Never commit the real .env — copy .env.example instead. See README.md.
+.env
+.env.local
+.env.*.local
+
+# Firebase native config (added when native Google Sign-In / Firebase
+# modules need it in a later phase) — these carry real project identifiers.
+android/app/google-services.json
+ios/GoogleService-Info.plist
+
+# Android signing
+*.jks
