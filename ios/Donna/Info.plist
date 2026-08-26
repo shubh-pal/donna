@@ -43,6 +43,23 @@
 	     the usage description is added now — see NOTES.md. -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Donna checks for a connected Bluetooth device before listening in the background.</string>
+	<!-- Phase 3: ambient mode. The "audio" background mode is what lets
+	     AVAudioSession (configured for .playAndRecord in
+	     AmbientAudioModule.swift) keep receiving microphone input once
+	     the app is backgrounded or the screen is locked — the same
+	     mechanism VoIP/podcast/dictation apps use for background audio.
+	     Read NOTES.md "Phase 3 — iOS" before assuming this means
+	     unconditional always-on background listening: iOS can still
+	     suspend the app if it decides the audio session isn't genuinely
+	     active, and Apple's App Review guidelines (2.5.4) specifically
+	     scrutinize this background mode's use for anything other than
+	     continuous, user-evident audio activity. This is the most
+	     capable real mechanism available without a special
+	     Apple-granted entitlement (e.g. PushToTalk) — not a guarantee. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
