@@ -21,7 +21,7 @@ export default function FormError({ message }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'rgba(255, 92, 122, 0.12)',
+    backgroundColor: colors.dangerSoft,
     borderColor: colors.danger,
     borderWidth: 1,
     borderRadius: radius.md,

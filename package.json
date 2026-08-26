@@ -1,6 +1,6 @@
 {
   "name": "Donna",
-  "version": "0.0.1",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -15,6 +15,7 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-google-signin/google-signin": "^16.1.4",
+    "@react-navigation/bottom-tabs": "^7.18.18",
     "@react-navigation/native": "^7.3.17",
     "@react-navigation/native-stack": "^7.18.9",
     "buffer": "^6.0.3",

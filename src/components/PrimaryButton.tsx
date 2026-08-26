@@ -13,7 +13,8 @@ type Props = {
   onPress: (event: GestureResponderEvent) => void;
   loading?: boolean;
   disabled?: boolean;
-  variant?: 'primary' | 'secondary';
+  variant?: 'primary' | 'secondary' | 'ghost';
+  icon?: React.ReactNode;
 };
 
 export default function PrimaryButton({
@@ -22,27 +23,39 @@ export default function PrimaryButton({
   loading,
   disabled,
   variant = 'primary',
+  icon,
 }: Props) {
   const isSecondary = variant === 'secondary';
+  const isGhost = variant === 'ghost';
   return (
     <TouchableOpacity
       style={[
         styles.button,
-        isSecondary ? styles.secondary : styles.primary,
+        isSecondary && styles.secondary,
+        isGhost && styles.ghost,
         (disabled || loading) && styles.disabled,
       ]}
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.8}
+      activeOpacity={0.82}
     >
       {loading ? (
         <ActivityIndicator
-          color={isSecondary ? colors.primary : colors.white}
+          color={isSecondary || isGhost ? colors.primary : colors.white}
         />
       ) : (
-        <Text style={[styles.text, isSecondary && styles.secondaryText]}>
-          {title}
-        </Text>
+        <>
+          {icon}
+          <Text
+            style={[
+              styles.text,
+              (isSecondary || isGhost) && styles.secondaryText,
+              icon ? styles.textWithIcon : null,
+            ]}
+          >
+            {title}
+          </Text>
+        </>
       )}
     </TouchableOpacity>
   );
@@ -50,29 +63,34 @@ export default function PrimaryButton({
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    borderRadius: radius.pill,
+    paddingVertical: spacing.md - 2,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: spacing.sm,
-  },
-  primary: {
     backgroundColor: colors.primary,
   },
   secondary: {
-    backgroundColor: 'transparent',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  ghost: {
+    backgroundColor: 'transparent',
+  },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   text: {
     color: colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
+  textWithIcon: {
+    marginLeft: spacing.sm,
+  },
   secondaryText: {
-    color: colors.primary,
+    color: colors.text,
   },
 });
