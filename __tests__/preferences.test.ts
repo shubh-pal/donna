@@ -1,5 +1,9 @@
 import {
+  getAmbientModeConfirmed,
+  getAmbientModeEnabled,
   getSaveHistoryEnabled,
+  setAmbientModeConfirmed,
+  setAmbientModeEnabled,
   setSaveHistoryEnabled,
 } from '../src/config/preferences';
 
@@ -14,5 +18,30 @@ describe('preferences: save conversation history', () => {
 
     await setSaveHistoryEnabled(false);
     await expect(getSaveHistoryEnabled()).resolves.toBe(false);
+  });
+});
+
+describe('preferences: ambient mode enabled', () => {
+  it('defaults to false when never set', async () => {
+    await expect(getAmbientModeEnabled()).resolves.toBe(false);
+  });
+
+  it('persists true/false across reads', async () => {
+    await setAmbientModeEnabled(true);
+    await expect(getAmbientModeEnabled()).resolves.toBe(true);
+
+    await setAmbientModeEnabled(false);
+    await expect(getAmbientModeEnabled()).resolves.toBe(false);
+  });
+});
+
+describe('preferences: ambient mode confirmation dialog seen', () => {
+  it('defaults to false when never set — the dialog should show on first enable', async () => {
+    await expect(getAmbientModeConfirmed()).resolves.toBe(false);
+  });
+
+  it('persists true across reads once the user confirms', async () => {
+    await setAmbientModeConfirmed(true);
+    await expect(getAmbientModeConfirmed()).resolves.toBe(true);
   });
 });

@@ -6,6 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * plain AsyncStorage is fine.
  */
 const SAVE_HISTORY_KEY = '@donna/save_conversation_history';
+const AMBIENT_MODE_ENABLED_KEY = '@donna/ambient_mode_enabled';
+const AMBIENT_MODE_CONFIRMED_KEY = '@donna/ambient_mode_confirmed_v1';
 
 /**
  * Whether Donna should keep a local record of past conversations.
@@ -21,4 +23,45 @@ export async function getSaveHistoryEnabled(): Promise<boolean> {
 
 export async function setSaveHistoryEnabled(enabled: boolean): Promise<void> {
   await AsyncStorage.setItem(SAVE_HISTORY_KEY, enabled ? 'true' : 'false');
+}
+
+/**
+ * Whether ambient (background/lock-screen) listening mode is turned on.
+ * Off by default. This flag is the user's *intent* — the app also needs
+ * mic/notification permissions and (on Android) the foreground service
+ * to actually be running for ambient mode to be functionally active;
+ * see `useAmbientMode.ts`, which treats this as one input among several.
+ */
+export async function getAmbientModeEnabled(): Promise<boolean> {
+  const value = await AsyncStorage.getItem(AMBIENT_MODE_ENABLED_KEY);
+  return value === 'true';
+}
+
+export async function setAmbientModeEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(
+    AMBIENT_MODE_ENABLED_KEY,
+    enabled ? 'true' : 'false',
+  );
+}
+
+/**
+ * Whether the user has already seen and accepted the "this continuously
+ * processes audio via Google's Gemini API" confirmation dialog. Tracked
+ * so that dialog only interrupts the very first time ambient mode is
+ * enabled, per the brief — not every time. Versioned in the storage key
+ * (`_v1`) so a future phase can force the dialog to reappear (e.g. after
+ * a material change to what ambient mode does) just by bumping it.
+ */
+export async function getAmbientModeConfirmed(): Promise<boolean> {
+  const value = await AsyncStorage.getItem(AMBIENT_MODE_CONFIRMED_KEY);
+  return value === 'true';
+}
+
+export async function setAmbientModeConfirmed(
+  confirmed: boolean,
+): Promise<void> {
+  await AsyncStorage.setItem(
+    AMBIENT_MODE_CONFIRMED_KEY,
+    confirmed ? 'true' : 'false',
+  );
 }
