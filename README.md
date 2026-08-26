@@ -22,21 +22,61 @@ Donna is an AI personal assistant for mobile, built with React Native
   that keeps secrets/build artifacts/keystores out of the repo, and a
   smoke test.
 
-Not in this phase: the actual AI conversation features (Gemini Live,
-ambient listening) — see NOTES.md.
+## Phase 2 — what's built
+
+- **Your own Gemini API key, stored on-device only**: Settings has a
+  field to paste a key from [Google AI Studio](https://aistudio.google.com).
+  It's validated with a real (lightweight) call to the Gemini API before
+  saving, then stored via `react-native-keychain` — the iOS Keychain /
+  Android Keystore, not `AsyncStorage` or a plain file — and is never
+  sent anywhere except directly from this device to Google's endpoints.
+- **Live voice conversation with Donna**: a hold-to-talk Conversation
+  screen that opens a session with Google's Gemini **Live API**
+  (WebSocket-based, real-time audio in and out), streams microphone
+  audio to it, and plays Donna's spoken replies back. Shows a live
+  transcript and distinct listening / thinking / speaking states.
+  Donna's persona: sharp, witty, dry, unflappable, extremely competent,
+  calls things as they are — see `src/config/geminiLive.ts` for the
+  system prompt.
+- **Privacy controls**: a "save conversation history" toggle (off by
+  default) and an in-app note explaining that conversation features
+  send audio/text to Google's Gemini API once a key is set up — and
+  nowhere else.
+- **Permission visibility**: Settings shows current microphone /
+  Bluetooth / notification permission status, with a link to the OS
+  Settings app when something's denied. (Bluetooth/notifications aren't
+  used by anything yet — they're ahead of Phase 3's ambient mode.)
+
+**Important — this phase hasn't been run on a real device or emulator**
+in the sandbox this was built in (no microphone, no way to open a real
+Gemini Live session). Everything is implemented against Google's
+documented API and the relevant libraries' documented behavior, and
+covered by unit tests wherever the logic is pure enough to test without
+real hardware — but the mic-capture → Gemini Live → speaker-playback
+path as a whole needs a real device pass. See NOTES.md for specifics
+and how to do that pass yourself.
 
 ## Project structure
 
 ```
 App.tsx                   Entry component: providers + navigator
 src/
-  components/              Shared UI (buttons, inputs, error banner, screen chrome)
+  audio/
+    micStreamer.ts          Mic capture -> base64 PCM chunks (react-native-live-audio-stream)
+    playbackQueue.ts         Queued playback of Gemini's PCM audio replies (react-native-sound)
+    pcmAudio.ts               Pure PCM -> WAV helpers (unit tested)
+  components/              Shared UI (buttons, inputs, error banner, screen chrome, setting rows)
   config/
-    firebase.ts            Firebase app/auth initialization (.env-driven)
-    authService.ts         signIn/signUp/signOut/Google sign-in/password reset
+    firebase.ts             Firebase app/auth initialization (.env-driven)
+    authService.ts          signIn/signUp/signOut/Google sign-in/password reset
+    apiKeyStore.ts          Gemini API key storage (react-native-keychain)
+    geminiRest.ts             Validates a Gemini API key with a real REST call
+    geminiLive.ts              Gemini Live (WebSocket) client, persona, message (de)serialization
+    preferences.ts            AsyncStorage-backed app preferences (save-history toggle)
   context/AuthContext.tsx  React context exposing the current Firebase user
+  hooks/usePermissionStatuses.ts  Mic/Bluetooth/notification permission status + open-settings
   navigation/               Route types + the RootNavigator (auth vs app stack)
-  screens/                  Login, Signup, ForgotPassword, Home, Settings
+  screens/                  Login, Signup, ForgotPassword, Home, Settings, Conversation
   theme/colors.ts           Shared color palette / spacing / radii
   utils/validation.ts       Field validation + Firebase error-message mapping
   types/                    Ambient TypeScript declarations (@env, firebase/auth)
@@ -104,6 +144,31 @@ npm run android   # or: npm run ios
 - The JS SDK approach used here needs no native config files to work;
   those become relevant if a later phase adds native Firebase modules.
 
+### 5. Set up conversation mode (Phase 2)
+
+Conversation mode needs a **real device or emulator with a working
+microphone** — it can't be exercised in a headless/CI environment.
+
+1. Get a free Gemini API key from
+   [Google AI Studio](https://aistudio.google.com).
+2. Run the app on a device/emulator (`npm run android` or `npm run ios`),
+   sign in, go to **Settings**, paste the key into the Gemini API key
+   field, and tap **Validate & save**. This makes one real, lightweight
+   call to Google to confirm the key works before storing it.
+3. Go to the **Home** screen and tap **Talk to Donna**, or open the
+   **Conversation** screen directly. Grant the microphone permission
+   when prompted, then hold the mic button and talk; release to hear
+   Donna's reply.
+
+If a real device isn't available, everything up to step 2's key
+validation (a plain HTTPS call) still works in an emulator with network
+access; step 3 needs real mic hardware.
+
+Because this project was built without device access, the mic-capture →
+Gemini Live → speaker-playback path has not been exercised end-to-end —
+see NOTES.md for what to check first if something doesn't work as
+expected.
+
 ## Scripts
 
 | Command                | What it does                          |
@@ -125,3 +190,14 @@ npm run android   # or: npm run ios
 - **Google Sign-In fails immediately**: double check `GOOGLE_WEB_CLIENT_ID`
   in `.env` is the *Web* client ID from the Firebase console's Google
   provider settings, not an Android/iOS client ID.
+- **"That key was rejected by Google"** in Settings: the Gemini API key
+  is wrong, disabled, or the Generative Language API isn't enabled for
+  the Google Cloud project it belongs to. Re-check it in
+  [Google AI Studio](https://aistudio.google.com).
+- **Conversation screen sends you back to Settings**: no Gemini API key
+  is saved yet on this device — keys are per-device (keychain-backed),
+  so a fresh install or a different device needs the key entered again.
+- **No sound / mic doesn't seem to work in Conversation mode**: this
+  needs a real device or emulator with mic support and the microphone
+  permission granted (check Settings → Permissions); it can't be
+  exercised in this sandbox — see NOTES.md.
