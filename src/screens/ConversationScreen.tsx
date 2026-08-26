@@ -1,53 +1,84 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import ScreenContainer from '../components/ScreenContainer';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import ChatBubble from '../components/ChatBubble';
+import ChatInputBar from '../components/ChatInputBar';
+import ListeningBlob from '../components/ListeningBlob';
 import PrimaryButton from '../components/PrimaryButton';
-import { colors, radius, spacing } from '../theme/colors';
+import { colors, fonts, spacing } from '../theme/colors';
 import { getGeminiApiKey } from '../config/apiKeyStore';
 import { GeminiLiveSession } from '../config/geminiLive';
 import { MicStreamer } from '../audio/micStreamer';
 import { AudioPlaybackQueue } from '../audio/playbackQueue';
-import type { AppStackParamList } from '../navigation/types';
+import { saveSession, type HistoryMessage } from '../config/historyStore';
+import type { HomeTabParamList, SettingsStackParamList } from '../navigation/types';
 
-type Props = NativeStackScreenProps<AppStackParamList, 'Conversation'>;
+type Props = BottomTabScreenProps<HomeTabParamList, 'Conversation'>;
 
 type ConversationState =
   | 'checking-key'
   | 'no-key'
   | 'connecting'
-  | 'idle'
   | 'listening'
   | 'thinking'
   | 'speaking'
+  | 'muted'
   | 'error';
 
 type TranscriptEntry = { id: number; speaker: 'you' | 'donna'; text: string };
 
-const STATE_CAPTION: Record<ConversationState, string> = {
+const STATUS_LABEL: Record<ConversationState, string> = {
   'checking-key': 'One sec…',
-  'no-key': "You'll need a Gemini API key first.",
-  connecting: 'Connecting to Donna…',
-  idle: 'Hold the button and talk.',
-  listening: "I'm listening.",
+  'no-key': 'Set up your API key',
+  connecting: 'Connecting…',
+  listening: 'Online',
+  thinking: 'Thinking…',
+  speaking: 'Speaking…',
+  muted: 'Muted',
+  error: 'Reconnecting…',
+};
+
+const FOCUS_CAPTION: Partial<Record<ConversationState, string>> = {
+  listening: "I'm listening. Speak naturally.",
   thinking: 'One sec…',
-  speaking: 'Donna is speaking…',
-  error: "Something went wrong — let's try that again.",
+  speaking: 'Here you go…',
+  muted: 'Microphone is off.',
 };
 
 /**
- * The tap/hold-to-talk conversation screen: hold the mic button to
- * stream audio to Gemini Live, release to let Donna respond.
+ * The merged conversation screen: one continuous, hands-free session —
+ * no hold-to-talk. The mic streams the whole time this screen is
+ * focused and unmuted; Gemini Live's own automatic voice-activity
+ * detection (not disabled anywhere in `buildSetupMessage`) finds each
+ * turn's boundary from the silence in that continuous stream, so the
+ * app never has to mark "that's one turn" itself — it only pauses the
+ * mic while Donna is actually speaking, to avoid the phone hearing its
+ * own voice back. Typed messages (`ChatInputBar`) are a second way into
+ * the same session, sent as a complete `clientContent` turn.
  *
- * The websocket session stays open for the whole visit to this screen
- * (one session, many turns) rather than reconnecting per press — closed
- * on unmount. Unverified against a real Gemini Live session or real
- * microphone hardware in this sandbox; see NOTES.md.
+ * Unverified against a real Gemini Live session on real microphone
+ * hardware for *this* continuous-mode rewrite specifically — the
+ * previous hold-to-talk version was device-verified; see NOTES.md.
  */
-export default function ConversationScreen({ navigation }: Props) {
+export default function ConversationScreen({}: Props) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<SettingsStackParamList>>();
+
   const [state, setStateReact] = useState<ConversationState>('checking-key');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [draft, setDraft] = useState('');
+  const [focusMode, setFocusMode] = useState(false);
 
   const stateRef = useRef<ConversationState>('checking-key');
   const apiKeyRef = useRef<string | null>(null);
@@ -60,28 +91,62 @@ export default function ConversationScreen({ navigation }: Props) {
   const currentYouEntryRef = useRef<number | null>(null);
   const currentDonnaEntryRef = useRef<number | null>(null);
   const scrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const sessionIdRef = useRef(`session-${Date.now()}`);
+  const historyMessagesRef = useRef<HistoryMessage[]>([]);
+  // Parallel to currentYouEntryRef/currentDonnaEntryRef, but indexing
+  // into historyMessagesRef instead of the transcript's own ids — kept
+  // separate so a streaming update knows exactly which history entry to
+  // grow without re-deriving it.
+  const historyIndexBySpeakerRef = useRef<{ you: number | null; donna: number | null }>(
+    { you: null, donna: null },
+  );
 
   const setConversationState = useCallback((next: ConversationState) => {
     stateRef.current = next;
     setStateReact(next);
   }, []);
 
+  /** Closes out the in-progress streaming entry for one speaker (turn boundary, new turn starting, etc). */
+  const resetCurrentEntry = useCallback((speaker: 'you' | 'donna') => {
+    if (speaker === 'you') currentYouEntryRef.current = null;
+    else currentDonnaEntryRef.current = null;
+    historyIndexBySpeakerRef.current[speaker] = null;
+  }, []);
+
+  const persistHistory = useCallback(() => {
+    if (historyMessagesRef.current.length === 0) return;
+    saveSession(sessionIdRef.current, historyMessagesRef.current).catch(
+      () => {
+        // Best-effort: history is a convenience, not load-bearing.
+      },
+    );
+  }, []);
+
   const appendTranscript = useCallback(
     (speaker: 'you' | 'donna', text: string) => {
       const entryRef =
         speaker === 'you' ? currentYouEntryRef : currentDonnaEntryRef;
-      setTranscript(prev => {
-        if (entryRef.current !== null) {
-          return prev.map(entry =>
+
+      if (entryRef.current !== null) {
+        const historyIndex = historyIndexBySpeakerRef.current[speaker];
+        if (historyIndex !== null) {
+          historyMessagesRef.current[historyIndex].text += text;
+        }
+        setTranscript(prev =>
+          prev.map(entry =>
             entry.id === entryRef.current
               ? { ...entry, text: entry.text + text }
               : entry,
-          );
-        }
+          ),
+        );
+      } else {
         const id = nextIdRef.current++;
         entryRef.current = id;
-        return [...prev, { id, speaker, text }];
-      });
+        historyIndexBySpeakerRef.current[speaker] =
+          historyMessagesRef.current.push({ speaker, text }) - 1;
+        setTranscript(prev => [...prev, { id, speaker, text }]);
+      }
+
       requestAnimationFrame(() =>
         scrollRef.current?.scrollToEnd({ animated: true }),
       );
@@ -95,24 +160,32 @@ export default function ConversationScreen({ navigation }: Props) {
     playbackRef.current?.dispose();
     sessionRef.current = null;
     playbackRef.current = null;
-  }, []);
+    persistHistory();
+  }, [persistHistory]);
 
   const connect = useCallback(
     (apiKey: string) => {
       setErrorMessage(null);
       setConversationState('connecting');
-      currentYouEntryRef.current = null;
-      currentDonnaEntryRef.current = null;
+      resetCurrentEntry('you');
+      resetCurrentEntry('donna');
       turnCompletePendingRef.current = false;
 
       playbackRef.current = new AudioPlaybackQueue(isPlaying => {
         isQueueActiveRef.current = isPlaying;
         if (isPlaying) {
+          // Pause capture while Donna is talking so the mic doesn't pick
+          // up her own voice through the speaker (no hardware echo
+          // cancellation to rely on here) — resumed the moment she's done.
+          micRef.current?.stop();
           setConversationState('speaking');
         } else if (turnCompletePendingRef.current) {
           turnCompletePendingRef.current = false;
-          currentDonnaEntryRef.current = null;
-          setConversationState('idle');
+          resetCurrentEntry('donna');
+          if (stateRef.current !== 'muted') {
+            micRef.current?.start();
+            setConversationState('listening');
+          }
         }
       });
 
@@ -121,18 +194,23 @@ export default function ConversationScreen({ navigation }: Props) {
       });
 
       const session = new GeminiLiveSession(apiKey, {
-        onSetupComplete: () => setConversationState('idle'),
+        onSetupComplete: () => {
+          micRef.current?.start();
+          setConversationState('listening');
+        },
         onInputTranscript: text => appendTranscript('you', text),
         onOutputTranscript: text => appendTranscript('donna', text),
         onAudioChunk: (data, mimeType) =>
           playbackRef.current?.enqueue(data, mimeType),
         onTurnComplete: () => {
-          currentYouEntryRef.current = null;
+          resetCurrentEntry('you');
           if (isQueueActiveRef.current) {
             turnCompletePendingRef.current = true;
           } else {
-            currentDonnaEntryRef.current = null;
-            setConversationState('idle');
+            resetCurrentEntry('donna');
+            if (stateRef.current !== 'muted') {
+              setConversationState('listening');
+            }
           }
         },
         onInterrupted: () => playbackRef.current?.clear(),
@@ -150,7 +228,7 @@ export default function ConversationScreen({ navigation }: Props) {
       sessionRef.current = session;
       session.connect();
     },
-    [appendTranscript, setConversationState],
+    [appendTranscript, resetCurrentEntry, setConversationState],
   );
 
   useEffect(() => {
@@ -177,119 +255,250 @@ export default function ConversationScreen({ navigation }: Props) {
     if (apiKeyRef.current) connect(apiKeyRef.current);
   };
 
-  const handlePressIn = () => {
-    if (!['idle', 'speaking'].includes(stateRef.current)) return;
-    if (stateRef.current === 'speaking') {
-      playbackRef.current?.clear();
-      turnCompletePendingRef.current = false;
+  const handleToggleMic = () => {
+    if (stateRef.current === 'listening') {
+      micRef.current?.stop();
+      sessionRef.current?.endAudioStream();
+      setConversationState('muted');
+    } else if (stateRef.current === 'muted') {
+      micRef.current?.start();
+      setConversationState('listening');
     }
-    currentYouEntryRef.current = null;
-    currentDonnaEntryRef.current = null;
-    micRef.current?.start();
-    setConversationState('listening');
   };
 
-  const handlePressOut = () => {
-    if (stateRef.current !== 'listening') return;
-    micRef.current?.stop();
-    sessionRef.current?.endAudioStream();
+  const handleSend = () => {
+    const text = draft.trim();
+    if (!text || !sessionRef.current) return;
+    resetCurrentEntry('you');
+    resetCurrentEntry('donna');
+    historyMessagesRef.current.push({ speaker: 'you', text });
+    setTranscript(prev => [
+      ...prev,
+      { id: nextIdRef.current++, speaker: 'you', text },
+    ]);
+    sessionRef.current.sendText(text);
+    setDraft('');
     setConversationState('thinking');
+    requestAnimationFrame(() =>
+      scrollRef.current?.scrollToEnd({ animated: true }),
+    );
   };
 
   if (state === 'no-key') {
     return (
-      <ScreenContainer>
-        <Text style={styles.title}>Talk to Donna</Text>
-        <View style={styles.card}>
-          <Text style={styles.cardBody}>
-            Conversation mode needs your own Gemini API key. Add one in Settings
-            and come back here.
-          </Text>
-          <PrimaryButton
-            title="Go to Settings"
-            onPress={() => navigation.navigate('Settings')}
-          />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.noKeyBody}>
+          <Text style={styles.wordmark}>Donna</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardBody}>
+              Conversation mode needs your own Gemini API key. Add one in
+              Settings and come back here.
+            </Text>
+            <PrimaryButton
+              title="Go to Settings"
+              onPress={() =>
+                navigation.getParent()?.navigate('SettingsTab' as never)
+              }
+            />
+          </View>
         </View>
-      </ScreenContainer>
+      </SafeAreaView>
     );
   }
 
-  const buttonDisabled = state === 'checking-key' || state === 'connecting';
-  const isTalking = state === 'listening';
+  if (focusMode) {
+    const isActive = state === 'listening';
+    return (
+      <SafeAreaView style={styles.focusSafeArea} edges={['top', 'bottom']}>
+        <View style={styles.focusBody}>
+          <Text style={styles.focusTitle}>Donna</Text>
+          <Text style={styles.focusStatus}>{STATUS_LABEL[state]}</Text>
+          <View style={styles.focusBlobWrap}>
+            <ListeningBlob active={isActive || state === 'speaking'} />
+          </View>
+          <Text style={styles.focusCaption}>
+            {FOCUS_CAPTION[state] ?? "I'm listening. Speak naturally."}
+          </Text>
+        </View>
+        <PrimaryButton
+          title={state === 'muted' ? 'Resume Listening' : 'Stop Listening'}
+          variant="secondary"
+          onPress={() => {
+            if (state !== 'muted') handleToggleMic();
+            setFocusMode(false);
+          }}
+        />
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <ScreenContainer scroll={false}>
-      <Text style={styles.title}>Talk to Donna</Text>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() =>
+            navigation.getParent()?.navigate('SettingsTab' as never)
+          }
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.headerIcon}>☰</Text>
+        </TouchableOpacity>
+        <Pressable
+          style={styles.headerCenter}
+          onPress={() => setFocusMode(true)}
+        >
+          <Text style={styles.headerTitle}>Donna</Text>
+          <Text
+            style={[
+              styles.headerStatus,
+              state === 'listening' && styles.headerStatusOnline,
+            ]}
+          >
+            {STATUS_LABEL[state]}
+          </Text>
+        </Pressable>
+        <Text style={styles.headerIcon}>🛡</Text>
+      </View>
 
       <ScrollView
         ref={scrollRef}
         style={styles.transcriptScroll}
         contentContainerStyle={styles.transcriptContent}
+        keyboardShouldPersistTaps="handled"
       >
         {transcript.length === 0 ? (
-          <Text style={styles.placeholder}>
-            Your conversation will show up here.
-          </Text>
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>Good morning.</Text>
+            <Text style={styles.emptySubtitle}>
+              What can I help you with today?
+            </Text>
+          </View>
         ) : (
           transcript.map(entry => (
-            <View
+            <ChatBubble
               key={entry.id}
-              style={[
-                styles.bubble,
-                entry.speaker === 'you' ? styles.bubbleYou : styles.bubbleDonna,
-              ]}
-            >
-              <Text style={styles.bubbleSpeaker}>
-                {entry.speaker === 'you' ? 'You' : 'Donna'}
-              </Text>
-              <Text style={styles.bubbleText}>{entry.text}</Text>
-            </View>
+              speaker={entry.speaker}
+              text={entry.text}
+            />
           ))
         )}
       </ScrollView>
 
       {state === 'error' ? (
-        <View style={styles.errorBox}>
+        <View style={styles.errorBar}>
           <Text style={styles.errorText}>{errorMessage}</Text>
           <PrimaryButton title="Try again" onPress={handleRetry} />
         </View>
       ) : (
-        <>
-          <Text style={styles.caption}>{STATE_CAPTION[state]}</Text>
-          <Pressable
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            disabled={buttonDisabled}
-            style={[
-              styles.micButton,
-              isTalking && styles.micButtonActive,
-              state === 'speaking' && styles.micButtonSpeaking,
-              buttonDisabled && styles.micButtonDisabled,
-            ]}
-          >
-            <Text style={styles.micButtonText}>
-              {isTalking ? '●' : state === 'speaking' ? '♪' : '🎙'}
-            </Text>
-          </Pressable>
-        </>
+        <View style={styles.inputWrap}>
+          <ChatInputBar
+            value={draft}
+            onChangeText={setDraft}
+            onSend={handleSend}
+            micActive={state === 'listening' || state === 'speaking'}
+            onToggleMic={handleToggleMic}
+            micDisabled={state === 'connecting' || state === 'checking-key'}
+          />
+        </View>
       )}
-    </ScreenContainer>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  headerIcon: {
+    fontSize: 20,
     color: colors.text,
-    fontSize: 28,
-    fontWeight: '700',
-    marginBottom: spacing.md,
+    width: 28,
+    textAlign: 'center',
+  },
+  headerCenter: {
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontFamily: fonts.display,
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  headerStatus: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  headerStatusOnline: {
+    color: colors.success,
+  },
+  transcriptScroll: {
+    flex: 1,
+  },
+  transcriptContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingTop: spacing.xxl,
+  },
+  emptyTitle: {
+    fontFamily: fonts.display,
+    fontSize: 24,
+    color: colors.text,
+  },
+  emptySubtitle: {
+    color: colors.textMuted,
+    fontSize: 15,
+    marginTop: spacing.xs,
+  },
+  inputWrap: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  errorBar: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  noKeyBody: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  wordmark: {
+    fontFamily: fonts.display,
+    fontStyle: 'italic',
+    fontSize: 32,
+    color: colors.primaryDark,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
   },
   card: {
     backgroundColor: colors.surface,
-    borderColor: colors.border,
+    borderColor: colors.borderSoft,
     borderWidth: 1,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    borderRadius: 22,
+    padding: spacing.lg,
   },
   cardBody: {
     color: colors.textMuted,
@@ -297,83 +506,36 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: spacing.md,
   },
-  transcriptScroll: {
+  focusSafeArea: {
     flex: 1,
+    backgroundColor: colors.background,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.lg,
   },
-  transcriptContent: {
-    paddingBottom: spacing.md,
-  },
-  placeholder: {
-    color: colors.textMuted,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: spacing.xl,
-  },
-  bubble: {
-    borderRadius: radius.md,
-    padding: spacing.sm + 4,
-    marginBottom: spacing.sm,
-    maxWidth: '85%',
-  },
-  bubbleYou: {
-    backgroundColor: colors.surfaceAlt,
-    alignSelf: 'flex-end',
-  },
-  bubbleDonna: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
-  },
-  bubbleSpeaker: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  bubbleText: {
-    color: colors.text,
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  caption: {
-    color: colors.textMuted,
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  micButton: {
-    alignSelf: 'center',
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: colors.primary,
+  focusBody: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
   },
-  micButtonActive: {
-    backgroundColor: colors.danger,
+  focusTitle: {
+    fontFamily: fonts.display,
+    fontSize: 26,
+    color: colors.text,
   },
-  micButtonSpeaking: {
-    backgroundColor: colors.primaryMuted,
-  },
-  micButtonDisabled: {
-    opacity: 0.4,
-  },
-  micButtonText: {
-    fontSize: 32,
-  },
-  errorBox: {
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  errorText: {
-    color: colors.danger,
+  focusStatus: {
+    color: colors.success,
     fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+    marginBottom: spacing.xl,
+  },
+  focusBlobWrap: {
+    marginBottom: spacing.xl,
+  },
+  focusCaption: {
+    color: colors.textMuted,
+    fontSize: 15,
     textAlign: 'center',
-    marginBottom: spacing.md,
   },
 });

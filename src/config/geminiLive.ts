@@ -147,6 +147,23 @@ export function buildAudioStreamEndMessage(): string {
 }
 
 /**
+ * A typed message from the user, sent as a `clientContent` turn rather
+ * than `realtimeInput` audio. Phase 4's Conversation screen is
+ * continuous/hands-free by default, but the input bar also accepts
+ * typed text — this is that second path into the same Live session.
+ * `turnComplete: true` tells the server this is the whole turn, so it
+ * responds immediately rather than waiting for more input.
+ */
+export function buildTextTurnMessage(text: string): string {
+  return JSON.stringify({
+    clientContent: {
+      turns: [{ role: 'user', parts: [{ text }] }],
+      turnComplete: true,
+    },
+  });
+}
+
+/**
  * Decodes whatever a Live API WebSocket `onmessage` handed us into a
  * UTF-8 string. The server sends its JSON frames as *binary* WebSocket
  * frames — with `ws.binaryType = 'arraybuffer'` (set in `connect()`
@@ -330,10 +347,25 @@ export class GeminiLiveSession {
     }
   }
 
-  /** Signals the end of one user turn (e.g. hold-to-talk button released). */
+  /**
+   * Signals the end of the realtime audio input stream — a Live API
+   * session concept, not a per-turn one. With automatic (server-side)
+   * voice activity detection, which the setup message doesn't disable,
+   * the server detects each turn's boundary from silence in the
+   * continuously-streamed audio on its own; the app never needs to mark
+   * "that's one turn" itself. Call this only when actually done sending
+   * audio for the session (e.g. muting or leaving the screen).
+   */
   endAudioStream(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(buildAudioStreamEndMessage());
+    }
+  }
+
+  /** Sends one typed message as a complete turn (the text half of the input bar). */
+  sendText(text: string): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(buildTextTurnMessage(text));
     }
   }
 

@@ -2,6 +2,7 @@ import {
   buildAudioChunkMessage,
   buildAudioStreamEndMessage,
   buildSetupMessage,
+  buildTextTurnMessage,
   decodeServerMessageData,
   GEMINI_LIVE_MODEL,
   LIVE_INPUT_MIME_TYPE,
@@ -153,6 +154,14 @@ describe('outgoing message builders', () => {
   it('builds an audio-stream-end message', () => {
     const message = JSON.parse(buildAudioStreamEndMessage());
     expect(message.realtimeInput.audioStreamEnd).toBe(true);
+  });
+
+  it('builds a complete text turn message', () => {
+    const message = JSON.parse(buildTextTurnMessage('Plan my day'));
+    expect(message.clientContent.turns).toEqual([
+      { role: 'user', parts: [{ text: 'Plan my day' }] },
+    ]);
+    expect(message.clientContent.turnComplete).toBe(true);
   });
 });
 
