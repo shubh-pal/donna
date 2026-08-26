@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Switch, Text, View } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import ScreenContainer from '../components/ScreenContainer';
 import PrimaryButton from '../components/PrimaryButton';
 import FormError from '../components/FormError';
@@ -24,6 +25,10 @@ import {
   type DisplayStatus,
   type PermissionKey,
 } from '../hooks/usePermissionStatuses';
+import { useAmbientModeContext } from '../context/AmbientModeContext';
+import type { AppStackParamList } from '../navigation/types';
+
+type Props = NativeStackScreenProps<AppStackParamList, 'Settings'>;
 
 type KeyFieldStatus =
   | { kind: 'idle' }
@@ -55,8 +60,9 @@ const STATUS_COLOR: Record<DisplayStatus, string> = {
   checking: colors.textMuted,
 };
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }: Props) {
   const { user } = useAuth();
+  const { enabled: ambientEnabled } = useAmbientModeContext();
   const [formError, setFormError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -219,6 +225,21 @@ export default function SettingsScreen() {
         </Text>
       </View>
 
+      <Text style={styles.sectionTitle}>Ambient mode</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardBody}>
+          Always-on background listening, gated so Donna only ever speaks out
+          loud through a connected Bluetooth device.
+        </Text>
+        <PrimaryButton
+          title={
+            ambientEnabled ? 'Ambient mode is on →' : 'Set up ambient mode →'
+          }
+          variant="secondary"
+          onPress={() => navigation.navigate('AmbientMode')}
+        />
+      </View>
+
       <Text style={styles.sectionTitle}>Permissions</Text>
       <View style={styles.card}>
         {(Object.keys(PERMISSION_LABELS) as PermissionKey[]).map(key => (
@@ -248,10 +269,10 @@ export default function SettingsScreen() {
           </SettingRow>
         ))}
         <Text style={styles.permissionsNote}>
-          Bluetooth and notification permissions aren't used by anything yet —
-          conversation mode only needs the microphone. They're surfaced here
-          ahead of the always-listening ambient mode (coming in Phase 3), which
-          will require them.
+          Conversation mode only needs the microphone. Bluetooth is what ambient
+          mode checks before ever speaking out loud (see Ambient mode above);
+          notifications back Android's required "Donna is listening"
+          foreground-service notice.
         </Text>
       </View>
     </ScreenContainer>

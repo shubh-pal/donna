@@ -10,6 +10,9 @@ import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ConversationScreen from '../screens/ConversationScreen';
+import AmbientModeScreen from '../screens/AmbientModeScreen';
+import { AmbientModeProvider } from '../context/AmbientModeContext';
+import AmbientListeningBanner from '../components/AmbientListeningBanner';
 import type { AppStackParamList, AuthStackParamList } from './types';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -45,11 +48,28 @@ function AuthNavigator() {
 
 function AppNavigator() {
   return (
-    <AppStack.Navigator screenOptions={{ headerShown: false }}>
-      <AppStack.Screen name="Home" component={HomeScreen} />
-      <AppStack.Screen name="Settings" component={SettingsScreen} />
-      <AppStack.Screen name="Conversation" component={ConversationScreen} />
-    </AppStack.Navigator>
+    // AmbientModeProvider hosts the single ambient-mode session for the
+    // whole signed-in app (see AmbientModeContext.tsx) — mounted here,
+    // above the screen stack, so it survives navigation between screens.
+    // AmbientListeningBanner is a sibling of the Navigator, not a screen,
+    // for the same reason: it must stay visible (and its kill switch
+    // reachable) no matter which screen is on top.
+    <AmbientModeProvider>
+      <View style={styles.appShell}>
+        <AmbientListeningBanner />
+        <View style={styles.navigatorFill}>
+          <AppStack.Navigator screenOptions={{ headerShown: false }}>
+            <AppStack.Screen name="Home" component={HomeScreen} />
+            <AppStack.Screen name="Settings" component={SettingsScreen} />
+            <AppStack.Screen
+              name="Conversation"
+              component={ConversationScreen}
+            />
+            <AppStack.Screen name="AmbientMode" component={AmbientModeScreen} />
+          </AppStack.Navigator>
+        </View>
+      </View>
+    </AmbientModeProvider>
   );
 }
 
@@ -83,5 +103,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.background,
+  },
+  appShell: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  navigatorFill: {
+    flex: 1,
   },
 });

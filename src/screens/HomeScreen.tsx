@@ -35,15 +35,18 @@ export default function HomeScreen({ navigation }: Props) {
         <Text style={styles.cardItem}>• Account &amp; sign-in</Text>
         <Text style={styles.cardItem}>• Live voice conversation mode</Text>
         <Text style={styles.cardItem}>
+          • Ambient background listening, Bluetooth-gated
+        </Text>
+        <Text style={styles.cardItem}>
           • Your own Gemini API key, stored on-device
         </Text>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Coming soon</Text>
-        <Text style={styles.cardItem}>• Ambient background listening</Text>
-        <Text style={styles.cardItem}>• Bluetooth-gated wake word</Text>
-      </View>
+      <PrimaryButton
+        title="Set up ambient mode"
+        variant="secondary"
+        onPress={() => navigation.navigate('AmbientMode')}
+      />
 
       <Text
         style={styles.settingsLink}
