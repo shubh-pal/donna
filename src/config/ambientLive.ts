@@ -32,6 +32,10 @@
  */
 
 import { GEMINI_LIVE_MODEL } from './geminiLive';
+import {
+  canDonnaSpeakThroughThisRoute,
+  type AudioRouteInfo,
+} from '../audio/audioRoute';
 
 /**
  * The model must output exactly this (and nothing else) when it has
@@ -109,4 +113,25 @@ export function shouldSuppressAmbientReply(
     .replace(/^[\s"'.,!?]+|[\s"'.,!?]+$/g, '');
   if (!normalized) return true;
   return normalized === AMBIENT_SILENCE_TOKEN.toUpperCase();
+}
+
+/**
+ * The single gate `useAmbientMode.ts` calls once a turn is complete and
+ * before ever enqueuing that turn's buffered audio for playback: is this
+ * a genuine reply (the content gate above), AND is a Bluetooth output
+ * currently connected (the safety gate in `audio/audioRoute.ts`)? Both
+ * must hold — a witty reply is still suppressed with no Bluetooth
+ * connected, and a connected Bluetooth device doesn't make the silence
+ * token speakable.
+ *
+ * Pure and unit-tested like its two halves; the orchestration layer
+ * should call this rather than re-deriving the combination, so there is
+ * exactly one place "may Donna speak this turn?" is decided.
+ */
+export function shouldPlayAmbientTurn(
+  outputTranscript: string | null | undefined,
+  route: AudioRouteInfo | null | undefined,
+): boolean {
+  if (shouldSuppressAmbientReply(outputTranscript)) return false;
+  return canDonnaSpeakThroughThisRoute(route);
 }

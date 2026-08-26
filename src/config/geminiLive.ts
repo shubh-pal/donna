@@ -175,9 +175,18 @@ export type LiveSessionEvents = {
 export class GeminiLiveSession {
   private ws: WebSocket | null = null;
 
+  /**
+   * @param buildSetup Builds the `setup` message sent once the socket
+   * opens. Defaults to the hold-to-talk persona (`buildSetupMessage`);
+   * ambient mode passes `buildAmbientSetupMessage` from `ambientLive.ts`
+   * instead so the two modes can share this same session shell (websocket
+   * lifecycle, message parsing, audio send/close) while only differing in
+   * persona/turn-boundary intent.
+   */
   constructor(
     private readonly apiKey: string,
     private readonly events: LiveSessionEvents,
+    private readonly buildSetup: () => string = buildSetupMessage,
   ) {}
 
   connect(): void {
@@ -187,7 +196,7 @@ export class GeminiLiveSession {
 
     ws.onopen = () => {
       this.events.onOpen?.();
-      ws.send(buildSetupMessage());
+      ws.send(this.buildSetup());
     };
 
     ws.onmessage = event => {

@@ -3,8 +3,18 @@ import {
   AMBIENT_SILENCE_TOKEN,
   AMBIENT_SYSTEM_PROMPT,
   buildAmbientSetupMessage,
+  shouldPlayAmbientTurn,
   shouldSuppressAmbientReply,
 } from '../src/config/ambientLive';
+import type { AudioRouteInfo } from '../src/audio/audioRoute';
+
+const BLUETOOTH_ROUTE: AudioRouteInfo = {
+  outputs: [{ type: 'bluetooth-a2dp', name: 'Pixel Buds' }],
+};
+const SPEAKER_ROUTE: AudioRouteInfo = {
+  outputs: [{ type: 'built-in-speaker' }],
+};
+const NO_ROUTE: AudioRouteInfo = { outputs: [] };
 
 describe('buildAmbientSetupMessage', () => {
   it('uses the same model as conversation mode, with the ambient persona', () => {
@@ -74,5 +84,28 @@ describe('shouldSuppressAmbientReply', () => {
 
   it('does not suppress a short but real reply', () => {
     expect(shouldSuppressAmbientReply('Nice catch.')).toBe(false);
+  });
+});
+
+describe('shouldPlayAmbientTurn', () => {
+  it('allows a genuine reply through a connected Bluetooth route', () => {
+    expect(shouldPlayAmbientTurn('Nice catch.', BLUETOOTH_ROUTE)).toBe(true);
+  });
+
+  it('blocks a genuine reply when no Bluetooth output is connected', () => {
+    expect(shouldPlayAmbientTurn('Nice catch.', SPEAKER_ROUTE)).toBe(false);
+    expect(shouldPlayAmbientTurn('Nice catch.', NO_ROUTE)).toBe(false);
+    expect(shouldPlayAmbientTurn('Nice catch.', null)).toBe(false);
+  });
+
+  it('blocks the silence token even with Bluetooth connected', () => {
+    expect(shouldPlayAmbientTurn(AMBIENT_SILENCE_TOKEN, BLUETOOTH_ROUTE)).toBe(
+      false,
+    );
+  });
+
+  it('blocks an empty transcript regardless of route', () => {
+    expect(shouldPlayAmbientTurn('', BLUETOOTH_ROUTE)).toBe(false);
+    expect(shouldPlayAmbientTurn(null, BLUETOOTH_ROUTE)).toBe(false);
   });
 });
