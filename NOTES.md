@@ -361,3 +361,66 @@ None of the three phases has been run against real backends/hardware in
 this sandbox — every "unverified" note across this file and README.md
 still applies cumulatively. See README.md "What a human needs to do
 next" for the concrete, ordered checklist to pick this up from here.
+
+## Phase 4 — redesign: new visual identity + continuous conversation
+
+Requested after Phases 1–3 shipped: a full re-theme to a light,
+lavender/cream visual identity (from user-supplied reference mockups),
+bottom-tab navigation (Home/History/Settings), on-device conversation
+history, a Settings screen restructured into nav rows with dedicated
+sub-screens, and — the substantive behavior change — replacing
+hold-to-talk with a continuous, hands-free conversation.
+
+**What changed:**
+- **Design system**: `src/theme/colors.ts` is now a light palette
+  (cream background, dusty-lavender/blush accents, pill buttons); every
+  screen already read its colors from this one file, so re-theming was
+  mostly contained there plus new shared components (`ChatBubble`,
+  `ChatInputBar`, `ListeningBlob`, `Avatar`, `StatusPill`, `NavRow`,
+  `WelcomeBackdrop`, `BackButton`).
+- **Navigation**: flat stack → bottom tabs (`@react-navigation/
+  bottom-tabs`), each tab its own nested native-stack; tab bar hides on
+  pushed detail screens and on the Home tab entirely (the immersive
+  Conversation screen). New `WelcomeScreen` as the unauthenticated
+  stack's first screen.
+- **Continuous conversation**: `ConversationScreen` no longer has a
+  hold-to-talk button. The mic starts streaming once the Live session's
+  `setupComplete` fires and keeps streaming continuously — the setup
+  message never disables the Live API's automatic (server-side) voice
+  activity detection, so the server finds each turn boundary from
+  silence in the stream on its own; the client never signals "that's
+  one turn." The mic is paused only while Donna's response audio is
+  actually playing (no hardware echo cancellation to rely on, so this
+  avoids the phone hearing itself), and resumes the instant playback
+  finishes. Typed text is a second path into the same session
+  (`GeminiLiveSession.sendText`, a `clientContent` turn) — the input bar
+  accepts either.
+- **History**: `historyStore.ts` (AsyncStorage) actually implements what
+  the "save conversation history" toggle has referenced since Phase 2;
+  a History tab lists/searches saved sessions and can view one read-only
+  or clear everything.
+- **Settings**: split from one long form into a nav-row list with
+  dedicated `APIKeyScreen`, `VoicePersonaScreen`, `PrivacyScreen`,
+  `AboutScreen`.
+
+**What's unverified about this phase specifically** (beyond the
+cumulative Phase 1–3 caveats above): the continuous-mode rewrite has
+not been exercised against a real Gemini Live session on real
+microphone hardware — the *previous* hold-to-talk version was
+device-verified (and its one real bug, a WebSocket binary-framing
+issue, was found and fixed that way — see the `Fix:` commit before
+Phase 4). Specifically worth checking on a real device:
+- Does the mic-pause-during-playback actually prevent Donna hearing
+  herself, or does some echo still leak through and get treated as the
+  next user turn?
+- Does automatic server-side VAD feel natural in practice, or does it
+  cut in too early/late compared to how hold-to-talk felt?
+- The full-screen "focus" listening view (tap the header) — is
+  `ListeningBlob`'s animation smooth on real hardware, not just
+  logically correct?
+- This phase's screens were built and typechecked/linted/unit-tested,
+  and a release APK was built successfully for a real device, but could
+  not be visually verified against the reference mockups from within
+  this environment — the Android emulator is disabled at the sandbox
+  level here (not a project limitation). A human should compare the
+  running app to the reference designs directly.
