@@ -13,11 +13,12 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ChatBubble from '../components/ChatBubble';
 import ChatInputBar from '../components/ChatInputBar';
+import Icon from '../components/Icon';
 import ListeningBlob from '../components/ListeningBlob';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors, fonts, spacing } from '../theme/colors';
 import { getGeminiApiKey } from '../config/apiKeyStore';
-import { buildSetupMessage } from '../config/geminiLive';
+import { buildOnboardingSetupMessage, buildSetupMessage } from '../config/geminiLive';
 import { extractMemoryFacts } from '../config/geminiRest';
 import { saveSession, type HistoryMessage } from '../config/historyStore';
 import {
@@ -26,6 +27,7 @@ import {
   listFacts,
 } from '../config/memoryStore';
 import { useLiveSession, type LiveTranscriptEntry } from '../hooks/useLiveSession';
+import { useAuth } from '../context/AuthContext';
 import type { HomeTabParamList, SettingsStackParamList } from '../navigation/types';
 
 type Props = BottomTabScreenProps<HomeTabParamList, 'Conversation'>;
@@ -54,12 +56,21 @@ function toHistoryMessages(transcript: LiveTranscriptEntry[]): HistoryMessage[] 
 
 /**
  * The merged conversation screen: one continuous, hands-free session —
- * no hold-to-talk. Session mechanics (connect, continuous mic streaming
- * with automatic server-side turn detection, mic pause while Donna
- * speaks, typed-text path) live in `useLiveSession`, shared with the
- * onboarding interview (`OnboardingScreen.tsx`); what this screen owns
- * is: the memory-aware system prompt, saving history on teardown, and a
- * best-effort memory-extraction pass over each conversation.
+ * no hold-to-talk. There is no separate onboarding screen — a user
+ * whose onboarding isn't complete yet (`useAuth().onboardingComplete`)
+ * gets exactly this screen, with the onboarding persona in place of the
+ * regular one, so meeting Donna for the first time feels like the start
+ * of an ordinary conversation, not a form or a distinct flow with its
+ * own "finish" button. That first conversation ending (leaving this
+ * screen, same as any other) is what calls `markOnboardingComplete` —
+ * naturally, not via an explicit "I'm done" control.
+ *
+ * Session mechanics (connect, continuous mic streaming with automatic
+ * server-side turn detection, mic pause while Donna speaks, typed-text
+ * path) live in `useLiveSession`; what this screen owns is: choosing
+ * the persona, the memory-aware system prompt, saving history on
+ * teardown, and a best-effort memory-extraction pass over each
+ * conversation.
  *
  * Unverified against a real Gemini Live session on real microphone
  * hardware for the continuous-mode rewrite specifically — see NOTES.md.
@@ -67,34 +78,49 @@ function toHistoryMessages(transcript: LiveTranscriptEntry[]): HistoryMessage[] 
 export default function ConversationScreen({}: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<SettingsStackParamList>>();
+  const { onboardingComplete, markOnboardingComplete } = useAuth();
 
   const [draft, setDraft] = useState('');
   const [focusMode, setFocusMode] = useState(false);
   const memoryContextRef = useRef('');
   const sessionIdRef = useRef(`session-${Date.now()}`);
+  // Captured once, at mount — RootNavigator only renders this screen
+  // once `onboardingComplete` has resolved to an actual boolean, and it
+  // must not change mid-session even once markOnboardingComplete() (at
+  // the end of *this* session) flips it, or a still-running session
+  // would suddenly look like a "regular" one to itself.
+  const isOnboardingRef = useRef(onboardingComplete === false);
 
-  const handleSessionEnd = useCallback((transcript: LiveTranscriptEntry[]) => {
-    if (transcript.length === 0) return;
-    const messages = toHistoryMessages(transcript);
+  const handleSessionEnd = useCallback(
+    (transcript: LiveTranscriptEntry[]) => {
+      if (transcript.length === 0) return;
+      const messages = toHistoryMessages(transcript);
+      const wasOnboarding = isOnboardingRef.current;
 
-    saveSession(sessionIdRef.current, messages).catch(() => {});
+      saveSession(sessionIdRef.current, messages).catch(() => {});
 
-    // Best-effort, fire-and-forget: never block/slow down leaving this
-    // screen on a background API call, and never surface its failure —
-    // see extractMemoryFacts' own doc comment for why it already
-    // swallows its own errors.
-    (async () => {
-      const apiKey = await getGeminiApiKey();
-      if (!apiKey) return;
-      const existing = await listFacts();
-      const newFacts = await extractMemoryFacts(
-        apiKey,
-        messages,
-        existing.map(f => f.text),
-      );
-      if (newFacts.length > 0) await addFacts(newFacts, 'conversation');
-    })();
-  }, []);
+      // Best-effort, fire-and-forget: never block/slow down leaving this
+      // screen on a background API call, and never surface its failure —
+      // see extractMemoryFacts' own doc comment for why it already
+      // swallows its own errors.
+      (async () => {
+        const apiKey = await getGeminiApiKey();
+        if (!apiKey) return;
+        const existing = await listFacts();
+        const newFacts = await extractMemoryFacts(
+          apiKey,
+          messages,
+          existing.map(f => f.text),
+        );
+        if (newFacts.length > 0) {
+          await addFacts(newFacts, wasOnboarding ? 'onboarding' : 'conversation');
+        }
+      })();
+
+      if (wasOnboarding) markOnboardingComplete();
+    },
+    [markOnboardingComplete],
+  );
 
   // buildSetup is read via ref at the moment the websocket actually
   // opens (see useLiveSession/GeminiLiveSession), not at render time —
@@ -104,11 +130,15 @@ export default function ConversationScreen({}: Props) {
   // local AsyncStorage read memory depends on is expected to resolve
   // well before the WS handshake does.
   const buildSetup = useCallback(
-    () => buildSetupMessage(memoryContextRef.current),
+    () =>
+      isOnboardingRef.current
+        ? buildOnboardingSetupMessage()
+        : buildSetupMessage(memoryContextRef.current),
     [],
   );
 
   useEffect(() => {
+    if (isOnboardingRef.current) return; // nothing to attach yet
     listFacts().then(facts => {
       memoryContextRef.current = buildMemoryContextBlock(facts);
     });
@@ -187,7 +217,7 @@ export default function ConversationScreen({}: Props) {
           }
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.headerIcon}>☰</Text>
+          <Icon name="menu" size={22} />
         </TouchableOpacity>
         <Pressable
           style={styles.headerCenter}
@@ -203,7 +233,23 @@ export default function ConversationScreen({}: Props) {
             {STATUS_LABEL[state]}
           </Text>
         </Pressable>
-        <Text style={styles.headerIcon}>🛡</Text>
+        <TouchableOpacity
+          onPress={() =>
+            // Cross-navigator jump (Home tab -> Settings tab -> a
+            // specific screen in its stack) isn't something
+            // @react-navigation's types model cleanly across sibling
+            // navigators — `any` here is deliberate, not a shortcut
+            // around a real type error.
+            (navigation.getParent() as any)?.navigate('SettingsTab', {
+              screen: 'Privacy',
+            })
+          }
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Privacy"
+        >
+          <Icon name="shield-outline" size={22} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -214,10 +260,21 @@ export default function ConversationScreen({}: Props) {
       >
         {transcript.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Good morning.</Text>
-            <Text style={styles.emptySubtitle}>
-              What can I help you with today?
-            </Text>
+            {isOnboardingRef.current ? (
+              <>
+                <Text style={styles.emptyTitle}>Hi, I'm Donna.</Text>
+                <Text style={styles.emptySubtitle}>
+                  Nice to meet you — go ahead, say hello.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyTitle}>Good morning.</Text>
+                <Text style={styles.emptySubtitle}>
+                  What can I help you with today?
+                </Text>
+              </>
+            )}
           </View>
         ) : (
           transcript.map(entry => (
@@ -262,12 +319,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-  },
-  headerIcon: {
-    fontSize: 20,
-    color: colors.text,
-    width: 28,
-    textAlign: 'center',
   },
   headerCenter: {
     alignItems: 'center',

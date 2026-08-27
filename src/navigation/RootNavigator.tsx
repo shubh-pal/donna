@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import {
   DefaultTheme,
   NavigationContainer,
@@ -13,7 +13,6 @@ import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
-import OnboardingScreen from '../screens/OnboardingScreen';
 import ConversationScreen from '../screens/ConversationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import HistoryDetailScreen from '../screens/HistoryDetailScreen';
@@ -26,6 +25,7 @@ import PrivacyScreen from '../screens/PrivacyScreen';
 import AboutScreen from '../screens/AboutScreen';
 import { AmbientModeProvider } from '../context/AmbientModeContext';
 import AmbientListeningBanner from '../components/AmbientListeningBanner';
+import Icon from '../components/Icon';
 import type {
   AppTabParamList,
   AuthStackParamList,
@@ -110,26 +110,32 @@ function SettingsNavigator() {
   );
 }
 
-/** Icons are plain glyphs rather than a vector-icon library — one fewer native dependency for a 3-item tab bar. */
-function TabIcon({ glyph, focused }: { glyph: string; focused: boolean }) {
+function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   return (
-    <Text style={[styles.tabIcon, focused && styles.tabIconFocused]}>
-      {glyph}
-    </Text>
+    <Icon
+      name={name}
+      size={22}
+      color={focused ? colors.primaryDark : colors.textFaint}
+    />
   );
 }
 
 // Declared at module scope (not inline in AppTabs' JSX) so
 // react/no-unstable-nested-components doesn't flag a fresh component
 // identity on every render — each tab's icon is genuinely static.
+// Filled/outline swap on focus is the same convention Material Design
+// tab bars use to show which tab is active.
 const renderHomeIcon = ({ focused }: { focused: boolean }) => (
-  <TabIcon glyph="⌂" focused={focused} />
+  <TabIcon name={focused ? 'home' : 'home-outline'} focused={focused} />
 );
 const renderHistoryIcon = ({ focused }: { focused: boolean }) => (
-  <TabIcon glyph="◷" focused={focused} />
+  <TabIcon
+    name={focused ? 'history' : 'clock-outline'}
+    focused={focused}
+  />
 );
 const renderSettingsIcon = ({ focused }: { focused: boolean }) => (
-  <TabIcon glyph="⚙" focused={focused} />
+  <TabIcon name={focused ? 'cog' : 'cog-outline'} focused={focused} />
 );
 
 /**
@@ -216,22 +222,23 @@ function LoadingScreen() {
 export default function RootNavigator() {
   const { user, initializing, onboardingComplete } = useAuth();
 
-  // Once signed in, `onboardingComplete` starts `null` while it's being
-  // read from storage — treated the same as `initializing` (show the
-  // loading screen) rather than flashing either the interview or the
-  // main app before the real answer is known.
+  // `onboardingComplete` starts `null` right after sign-in, while it's
+  // being read from storage — held on the loading screen for that brief
+  // moment rather than flashing the main app before ConversationScreen
+  // knows whether to greet the user as someone new (see that screen:
+  // there's no separate onboarding screen — the very first conversation
+  // *is* the interview, in the same chat UI as every conversation after
+  // it, and it's this flag that tells it which persona to use).
   const stillResolvingOnboarding = Boolean(user) && onboardingComplete === null;
 
   return (
     <NavigationContainer theme={navigationTheme}>
       {initializing || stillResolvingOnboarding ? (
         <LoadingScreen />
-      ) : !user ? (
-        <AuthNavigator />
-      ) : !onboardingComplete ? (
-        <OnboardingScreen />
-      ) : (
+      ) : user ? (
         <AppTabs />
+      ) : (
+        <AuthNavigator />
       )}
     </NavigationContainer>
   );
@@ -250,13 +257,6 @@ const styles = StyleSheet.create({
   },
   navigatorFill: {
     flex: 1,
-  },
-  tabIcon: {
-    fontSize: 20,
-    color: colors.textFaint,
-  },
-  tabIconFocused: {
-    color: colors.primaryDark,
   },
   tabLabel: {
     fontSize: 11,
