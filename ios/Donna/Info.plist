@@ -79,5 +79,17 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- react-native-vector-icons: the Info.plist half of registering a
+	     bundled icon font — see MaterialCommunityIcons.ttf under
+	     ios/Donna/Fonts/. The other half (adding that file to the Xcode
+	     project's "Copy Bundle Resources" build phase) was not
+	     completed/verified in this environment (no Xcode here — see
+	     NOTES.md); a human needs to drag Fonts/MaterialCommunityIcons.ttf
+	     into the Xcode project and confirm it's in that build phase
+	     before icons will actually render on iOS. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>MaterialCommunityIcons.ttf</string>
+	</array>
 </dict>
 </plist>

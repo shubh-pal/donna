@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Icon from '../components/Icon';
 import {
   clearAllSessions,
   searchSessions,
@@ -112,7 +113,7 @@ export default function HistoryScreen({ navigation }: Props) {
               activeOpacity={0.7}
             >
               <View style={styles.rowIcon}>
-                <Text style={styles.rowIconGlyph}>💬</Text>
+                <Icon name="message-text-outline" size={18} color={colors.primaryDark} />
               </View>
               <View style={styles.rowBody}>
                 <Text style={styles.rowTitle} numberOfLines={1}>
@@ -179,9 +180,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm + 2,
-  },
-  rowIconGlyph: {
-    fontSize: 16,
   },
   rowBody: {
     flex: 1,

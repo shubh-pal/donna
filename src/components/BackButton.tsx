@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, TouchableOpacity } from 'react-native';
+import Icon from './Icon';
 import { colors } from '../theme/colors';
 
 type Props = {
@@ -15,7 +16,7 @@ export default function BackButton({ onPress }: Props) {
       accessibilityLabel="Go back"
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <Text style={styles.glyph}>‹</Text>
+      <Icon name="chevron-left" size={24} color={colors.text} />
     </TouchableOpacity>
   );
 }
@@ -29,11 +30,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
-  },
-  glyph: {
-    color: colors.text,
-    fontSize: 22,
-    lineHeight: 22,
-    marginTop: -2,
   },
 });

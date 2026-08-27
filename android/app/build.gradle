@@ -124,3 +124,9 @@ dependencies {
     // is declared explicitly rather than relying on that.
     implementation("androidx.core:core-ktx:1.15.0")
 }
+
+// react-native-vector-icons: bundles its font files into the app's
+// assets so <Icon name="..." /> can render without a separate
+// download/link step. Standard install step for this library on
+// Android — see https://github.com/oblador/react-native-vector-icons.
+apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"

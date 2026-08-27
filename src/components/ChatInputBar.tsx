@@ -1,11 +1,6 @@
 import React from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import Icon from './Icon';
 import { colors, radius, spacing } from '../theme/colors';
 
 type Props = {
@@ -63,9 +58,17 @@ export default function ChatInputBar({
           hasText ? 'Send message' : micActive ? 'Mute microphone' : 'Unmute microphone'
         }
       >
-        <Text style={styles.iconGlyph}>
-          {hasText ? '➤' : micActive ? '🎙' : '🔇'}
-        </Text>
+        <Icon
+          name={hasText ? 'send' : micActive ? 'microphone' : 'microphone-off'}
+          size={20}
+          color={
+            hasText
+              ? colors.white
+              : micActive
+                ? colors.primaryDark
+                : colors.textMuted
+          }
+        />
       </TouchableOpacity>
     </View>
   );
@@ -106,8 +109,5 @@ const styles = StyleSheet.create({
   },
   iconButtonSend: {
     backgroundColor: colors.primary,
-  },
-  iconGlyph: {
-    fontSize: 17,
   },
 });

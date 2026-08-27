@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Icon from './Icon';
 import { colors, spacing } from '../theme/colors';
 
 type Props = {
@@ -31,7 +32,7 @@ export default function NavRow({
       <View style={styles.right}>
         {value}
         {onPress && showChevron ? (
-          <Text style={styles.chevron}>›</Text>
+          <Icon name="chevron-right" size={20} color={colors.textFaint} />
         ) : null}
       </View>
     </TouchableOpacity>
@@ -57,11 +58,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-  },
-  chevron: {
-    color: colors.textFaint,
-    fontSize: 20,
-    marginLeft: spacing.xs,
-    marginTop: -2,
   },
 });
