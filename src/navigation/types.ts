@@ -5,9 +5,15 @@ export type AuthStackParamList = {
   ForgotPassword: undefined;
 };
 
-/** The Home tab is just the Conversation screen — no nested stack needed. */
+/**
+ * The Home tab is just the Conversation screen — no nested stack
+ * needed. `continueSessionId`, when present, is set by
+ * HistoryDetailScreen's "Continue This Conversation" — Conversation
+ * resolves it into a past session's messages and resumes from there
+ * (see ConversationScreen.tsx and useLiveSession's `initialTranscript`).
+ */
 export type HomeTabParamList = {
-  Conversation: undefined;
+  Conversation: { continueSessionId?: string } | undefined;
 };
 
 export type HistoryStackParamList = {

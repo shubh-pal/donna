@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,9 +19,17 @@ import ListeningBlob from '../components/ListeningBlob';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors, fonts, spacing } from '../theme/colors';
 import { getGeminiApiKey } from '../config/apiKeyStore';
-import { buildOnboardingSetupMessage, buildSetupMessage } from '../config/geminiLive';
+import {
+  buildOnboardingSetupMessage,
+  buildSetupMessage,
+  type HistoryTurn,
+} from '../config/geminiLive';
 import { extractMemoryFacts } from '../config/geminiRest';
-import { saveSession, type HistoryMessage } from '../config/historyStore';
+import {
+  listSessions,
+  saveSession,
+  type HistoryMessage,
+} from '../config/historyStore';
 import {
   addFacts,
   buildMemoryContextBlock,
@@ -55,6 +64,78 @@ function toHistoryMessages(transcript: LiveTranscriptEntry[]): HistoryMessage[] 
 }
 
 /**
+ * Resolves `route.params.continueSessionId` (set by HistoryDetailScreen's
+ * "Continue This Conversation") into that session's messages before
+ * ever mounting `ConversationScreenInner` — `useLiveSession`'s
+ * `initialTranscript` has to be known at first render (it seeds
+ * `useState`), so this can't be a plain effect inside the hook-using
+ * component; it has to happen a layer above, where "still resolving"
+ * can just... not render that component yet.
+ *
+ * The common case (no continueSessionId) skips straight to
+ * `ConversationScreenInner` with no loading step at all.
+ */
+export default function ConversationScreen({ navigation, route }: Props) {
+  const continueSessionId = route.params?.continueSessionId;
+  const [resolved, setResolved] = useState(!continueSessionId);
+  const [resumeData, setResumeData] = useState<{
+    sessionId: string;
+    turns: HistoryTurn[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!continueSessionId) return;
+    // Resets the loading gate even if a *previous* continueSessionId
+    // had already resolved — otherwise continuing session B right
+    // after session A (without an intermediate unmount) would flash
+    // A's stale resumeData for a moment before B's fetch resolves.
+    setResolved(false);
+    let cancelled = false;
+    listSessions().then(sessions => {
+      if (cancelled) return;
+      const session = sessions.find(s => s.id === continueSessionId);
+      if (session) {
+        setResumeData({ sessionId: session.id, turns: session.messages });
+      }
+      setResolved(true);
+      // Clear the param once consumed — this screen never remounts on
+      // tab switches, so a lingering continueSessionId would otherwise
+      // still be sitting in route.params next time this effect's
+      // dependency happens to re-fire (or on a future resume), replaying
+      // a session nobody asked to resume again.
+      navigation.setParams({ continueSessionId: undefined });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [continueSessionId]);
+
+  if (!resolved) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <ConversationScreenInner
+      key={resumeData?.sessionId}
+      resumeSessionId={resumeData?.sessionId}
+      initialTranscript={resumeData?.turns}
+    />
+  );
+}
+
+type InnerProps = {
+  resumeSessionId?: string;
+  initialTranscript?: HistoryTurn[];
+};
+
+/**
  * The merged conversation screen: one continuous, hands-free session —
  * no hold-to-talk. There is no separate onboarding screen — a user
  * whose onboarding isn't complete yet (`useAuth().onboardingComplete`)
@@ -65,9 +146,14 @@ function toHistoryMessages(transcript: LiveTranscriptEntry[]): HistoryMessage[] 
  * screen, same as any other) is what calls `markOnboardingComplete` —
  * naturally, not via an explicit "I'm done" control.
  *
+ * Also doubles as the "continue this conversation" screen — see
+ * `ConversationScreen` above, which resolves a saved session into
+ * `initialTranscript`/`resumeSessionId` before this ever mounts.
+ *
  * Session mechanics (connect, continuous mic streaming with automatic
  * server-side turn detection, mic pause while Donna speaks, typed-text
- * path) live in `useLiveSession`; what this screen owns is: choosing
+ * path, replaying `initialTranscript` into the fresh Live session as
+ * context) live in `useLiveSession`; what this screen owns is: choosing
  * the persona, the memory-aware system prompt, saving history on
  * teardown, and a best-effort memory-extraction pass over each
  * conversation.
@@ -75,7 +161,10 @@ function toHistoryMessages(transcript: LiveTranscriptEntry[]): HistoryMessage[] 
  * Unverified against a real Gemini Live session on real microphone
  * hardware for the continuous-mode rewrite specifically — see NOTES.md.
  */
-export default function ConversationScreen({}: Props) {
+function ConversationScreenInner({
+  resumeSessionId,
+  initialTranscript,
+}: InnerProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<SettingsStackParamList>>();
   const { onboardingComplete, markOnboardingComplete } = useAuth();
@@ -103,13 +192,21 @@ export default function ConversationScreen({}: Props) {
   }, [focusMode, navigation]);
 
   const memoryContextRef = useRef('');
-  const sessionIdRef = useRef(`session-${Date.now()}`);
+  // Continuing a saved conversation reuses its id, so leaving this
+  // screen again *updates* the same History entry instead of forking a
+  // new one.
+  const sessionIdRef = useRef(resumeSessionId ?? `session-${Date.now()}`);
   // Captured once, at mount — RootNavigator only renders this screen
   // once `onboardingComplete` has resolved to an actual boolean, and it
   // must not change mid-session even once markOnboardingComplete() (at
   // the end of *this* session) flips it, or a still-running session
-  // would suddenly look like a "regular" one to itself.
-  const isOnboardingRef = useRef(onboardingComplete === false);
+  // would suddenly look like a "regular" one to itself. Continuing a
+  // past conversation is never the onboarding interview, regardless of
+  // that flag — someone with a saved conversation has, definitionally,
+  // already had a first one.
+  const isOnboardingRef = useRef(
+    onboardingComplete === false && !initialTranscript,
+  );
 
   const handleSessionEnd = useCallback(
     (transcript: LiveTranscriptEntry[]) => {
@@ -165,7 +262,7 @@ export default function ConversationScreen({}: Props) {
   }, []);
 
   const { state, errorMessage, transcript, retry, toggleMic, sendText } =
-    useLiveSession(buildSetup, handleSessionEnd);
+    useLiveSession(buildSetup, handleSessionEnd, initialTranscript);
 
   // The Home tab is never remounted just by switching tabs (React
   // Navigation keeps tab screens mounted), so useLiveSession's own
@@ -349,6 +446,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',

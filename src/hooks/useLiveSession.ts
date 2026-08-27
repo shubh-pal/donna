@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGeminiApiKey } from '../config/apiKeyStore';
-import { GeminiLiveSession } from '../config/geminiLive';
+import { GeminiLiveSession, type HistoryTurn } from '../config/geminiLive';
 import { MicStreamer } from '../audio/micStreamer';
 import { AudioPlaybackQueue } from '../audio/playbackQueue';
 import { ensureMicrophonePermission } from '../utils/micPermission';
@@ -35,14 +35,36 @@ export type LiveTranscriptEntry = {
  * history; both it and onboarding extract memory, but from different
  * sources/with different framing). `onSessionEnd` hands back the final
  * transcript on teardown so each screen can do its own thing with it.
+ *
+ * @param initialTranscript Optional — a past conversation to resume
+ * ("Continue this conversation" from History). Shown in the transcript
+ * immediately (no waiting on a connection), and replayed into the
+ * fresh Live session as context the moment it's ready (see
+ * `primeHistory`/`buildHistoryPrimingMessage` in geminiLive.ts) — sent
+ * exactly once per hook lifetime, not on every reconnect.
  */
 export function useLiveSession(
   buildSetup: () => string,
   onSessionEnd?: (transcript: LiveTranscriptEntry[]) => void,
+  initialTranscript?: HistoryTurn[],
 ) {
+  const seedTranscript = useCallback(
+    (): LiveTranscriptEntry[] =>
+      (initialTranscript ?? []).map((turn, index) => ({
+        id: index,
+        speaker: turn.speaker,
+        text: turn.text,
+      })),
+    // Deliberately NOT reactive to initialTranscript changing after
+    // first render — this seeds state once, like the value it's named
+    // after.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const [state, setStateReact] = useState<LiveSessionState>('checking-key');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<LiveTranscriptEntry[]>([]);
+  const [transcript, setTranscript] = useState<LiveTranscriptEntry[]>(seedTranscript);
 
   const stateRef = useRef<LiveSessionState>('checking-key');
   const apiKeyRef = useRef<string | null>(null);
@@ -51,10 +73,11 @@ export function useLiveSession(
   const playbackRef = useRef<AudioPlaybackQueue | null>(null);
   const isQueueActiveRef = useRef(false);
   const turnCompletePendingRef = useRef(false);
-  const nextIdRef = useRef(0);
+  const nextIdRef = useRef(seedTranscript().length);
   const currentYouEntryRef = useRef<number | null>(null);
   const currentDonnaEntryRef = useRef<number | null>(null);
-  const transcriptRef = useRef<LiveTranscriptEntry[]>([]);
+  const transcriptRef = useRef<LiveTranscriptEntry[]>(seedTranscript());
+  const hasPrimedHistoryRef = useRef(false);
   const buildSetupRef = useRef(buildSetup);
   buildSetupRef.current = buildSetup;
   const onSessionEndRef = useRef(onSessionEnd);
@@ -157,6 +180,10 @@ export function useLiveSession(
                 setState('error');
                 return;
               }
+              if (initialTranscript && !hasPrimedHistoryRef.current) {
+                hasPrimedHistoryRef.current = true;
+                session.primeHistory(initialTranscript);
+              }
               micRef.current?.start();
               setState('listening');
             });
@@ -198,7 +225,7 @@ export function useLiveSession(
       sessionRef.current = session;
       session.connect();
     },
-    [appendTranscript, resetCurrentEntry, setState],
+    [appendTranscript, initialTranscript, resetCurrentEntry, setState],
   );
 
   /** Re-reads the stored API key and connects if one's there — the mount effect below is just this run once, cancellably. */

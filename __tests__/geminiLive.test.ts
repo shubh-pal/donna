@@ -3,6 +3,7 @@ import {
   buildAudioStreamEndMessage,
   buildOnboardingSetupMessage,
   buildSetupMessage,
+  buildHistoryPrimingMessage,
   buildTextTurnMessage,
   decodeServerMessageData,
   DONNA_SYSTEM_PROMPT,
@@ -166,6 +167,24 @@ describe('outgoing message builders', () => {
       { role: 'user', parts: [{ text: 'Plan my day' }] },
     ]);
     expect(message.clientContent.turnComplete).toBe(true);
+  });
+
+  it('builds a history-priming message with alternating roles and turnComplete false', () => {
+    const message = JSON.parse(
+      buildHistoryPrimingMessage([
+        { speaker: 'you', text: 'Hello.' },
+        { speaker: 'donna', text: "Hey, what's up?" },
+        { speaker: 'you', text: 'Just checking in.' },
+      ]),
+    );
+    expect(message.clientContent.turns).toEqual([
+      { role: 'user', parts: [{ text: 'Hello.' }] },
+      { role: 'model', parts: [{ text: "Hey, what's up?" }] },
+      { role: 'user', parts: [{ text: 'Just checking in.' }] },
+    ]);
+    // false, not omitted — the model should ingest this as background,
+    // not treat it as a turn to respond to right now.
+    expect(message.clientContent.turnComplete).toBe(false);
   });
 
   it('omits memory context from the setup message by default', () => {

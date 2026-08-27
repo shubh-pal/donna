@@ -578,3 +578,55 @@ available; both of these bugs would have been very hard to guess
 correctly from source reading alone (the mic crash in particular — it
 only manifests on a device where the permission hasn't been granted
 yet, which nothing in this sandbox can trigger).
+
+## Continue-a-past-conversation from History
+
+Feature request: tapping a saved conversation in History should let
+you keep talking to Donna from where it left off, not just view it
+read-only.
+
+- `useLiveSession` takes an optional `initialTranscript: HistoryTurn[]`
+  — seeds the on-screen transcript immediately (no waiting on a
+  connection) and, once the fresh Live session's `onSetupComplete`
+  fires (after the mic-permission check), sends it once via
+  `session.primeHistory()` (`geminiLive.ts`'s
+  `buildHistoryPrimingMessage` — a `clientContent` turn with
+  `turnComplete: false`, so the model ingests it as background instead
+  of treating it as a turn to respond to right now).
+- `ConversationScreen.tsx` was split: a thin wrapper resolves
+  `route.params.continueSessionId` (set by History) into that
+  session's messages via `listSessions()` *before* ever mounting the
+  real screen — `initialTranscript` has to be known at first render
+  since it seeds `useState`, so this can't be a plain effect inside
+  the hook-using component. The real screen (`ConversationScreenInner`)
+  reuses the resumed session's id for `saveSession`, so leaving again
+  updates the same History entry instead of forking a new one, and
+  never treats a resume as the onboarding interview even for a still-
+  new account.
+- Tapping a row in History now jumps straight into Home with that
+  conversation resumed (`HistoryScreen.tsx`'s row `onPress`) instead of
+  going through the old read-only detail screen first — that's still
+  reachable by long-press, with its own "Continue" button as a second
+  path to the same place.
+
+**Bug found via user testing on the real device (not caught by
+building the feature)**: after continuing a conversation and sending a
+new message (typed or spoken), the app would bounce back to History —
+with no `navigate()` call anywhere related to sending a message,
+because there wasn't one. Root cause: `Tab.Navigator`'s default
+`backBehavior` is `'history'` — an Android back event, once there's
+nothing left to pop in the focused tab's own stack, falls through to
+whichever tab was visited *before* it, landing back on
+`HistoryDetailScreen` since that's where its stack was left. Some
+Android keyboards synthesize a back event when they close (e.g. right
+after tapping Send), which is enough to trigger this with no explicit
+back button press. Fixed by setting `backBehavior="initialRoute"` on
+the Tab.Navigator so back always lands on Home. Also cleared
+`continueSessionId` from route params via `navigation.setParams()`
+once consumed, since the Home tab screen is never remounted by tab
+switches and a lingering param could otherwise replay an old resume.
+
+Verified on the real device: tapping a History row lands in a live,
+continuable conversation with the prior messages already shown; typing
+and sending, then speaking, both stayed on the Conversation screen with
+no bounce back to History.

@@ -226,6 +226,32 @@ export function buildTextTurnMessage(text: string): string {
   });
 }
 
+export type HistoryTurn = { speaker: 'you' | 'donna'; text: string };
+
+/**
+ * Replays a past conversation's messages into a brand-new Live session
+ * as `clientContent` history — used to "continue" a saved conversation
+ * from the History tab. The Live API protocol has no notion of
+ * resuming a previous WebSocket session (it's gone once closed); this
+ * is the documented way to give a *new* session the same context: send
+ * the prior turns up front, alternating `user`/`model` roles, with
+ * `turnComplete: false` so the model ingests them as background
+ * without generating a fresh reply to old messages the moment it
+ * connects. The next *real* turn (mic audio or a typed message) is
+ * what actually gets a response.
+ */
+export function buildHistoryPrimingMessage(turns: HistoryTurn[]): string {
+  return JSON.stringify({
+    clientContent: {
+      turns: turns.map(turn => ({
+        role: turn.speaker === 'you' ? 'user' : 'model',
+        parts: [{ text: turn.text }],
+      })),
+      turnComplete: false,
+    },
+  });
+}
+
 /**
  * Decodes whatever a Live API WebSocket `onmessage` handed us into a
  * UTF-8 string. The server sends its JSON frames as *binary* WebSocket
@@ -429,6 +455,14 @@ export class GeminiLiveSession {
   sendText(text: string): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(buildTextTurnMessage(text));
+    }
+  }
+
+  /** Replays a past conversation into this (freshly-connected) session as context — see buildHistoryPrimingMessage. Call once, right after setupComplete, before the first real turn. */
+  primeHistory(turns: HistoryTurn[]): void {
+    if (turns.length === 0) return;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(buildHistoryPrimingMessage(turns));
     }
   }
 

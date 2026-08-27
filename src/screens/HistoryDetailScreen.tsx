@@ -4,13 +4,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import BackButton from '../components/BackButton';
 import ChatBubble from '../components/ChatBubble';
+import PrimaryButton from '../components/PrimaryButton';
 import { listSessions, type HistorySession } from '../config/historyStore';
 import { colors, spacing } from '../theme/colors';
 import type { HistoryStackParamList } from '../navigation/types';
 
 type Props = NativeStackScreenProps<HistoryStackParamList, 'HistoryDetail'>;
 
-/** Read-only viewer for one saved conversation — reuses ChatBubble so it looks identical to the live screen. */
+/**
+ * Viewer for one saved conversation — reuses ChatBubble so it looks
+ * identical to the live screen. "Continue This Conversation" hands the
+ * session id to the Home tab (cross-tab navigation — `navigation`
+ * here is scoped to the History stack, so this goes through
+ * `getParent()` to reach the Tab navigator, same pattern
+ * ConversationScreen uses for its own cross-tab jumps), where
+ * ConversationScreen resolves it back into this session's messages and
+ * resumes from there — see that screen and useLiveSession's
+ * `initialTranscript`.
+ */
 export default function HistoryDetailScreen({ navigation, route }: Props) {
   const [session, setSession] = useState<HistorySession | null | undefined>(
     undefined,
@@ -21,6 +32,14 @@ export default function HistoryDetailScreen({ navigation, route }: Props) {
       setSession(sessions.find(s => s.id === route.params.sessionId) ?? null);
     });
   }, [route.params.sessionId]);
+
+  const handleContinue = () => {
+    if (!session) return;
+    (navigation.getParent() as any)?.navigate('HomeTab', {
+      screen: 'Conversation',
+      params: { continueSessionId: session.id },
+    });
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
@@ -45,6 +64,14 @@ export default function HistoryDetailScreen({ navigation, route }: Props) {
           ))
         )}
       </ScrollView>
+      {session ? (
+        <View style={styles.footer}>
+          <PrimaryButton
+            title="Continue This Conversation"
+            onPress={handleContinue}
+          />
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -73,5 +100,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: spacing.xl,
+  },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
   },
 });

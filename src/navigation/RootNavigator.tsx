@@ -162,6 +162,17 @@ function AppTabs() {
         <AmbientListeningBanner />
         <View style={styles.navigatorFill}>
           <Tab.Navigator
+            // Default 'history' backBehavior means an Android hardware-back
+            // event (including ones some keyboards synthesize when they
+            // close, e.g. right after tapping Send) — once there's nothing
+            // left to pop within the focused tab's own stack — falls
+            // through to whichever tab was visited *before* this one. That
+            // silently bounced people from a resumed conversation back to
+            // History (its last screen still being HistoryDetail) with no
+            // explicit navigate() call anywhere to grep for. 'initialRoute'
+            // makes back always land on Home instead, regardless of tab
+            // history.
+            backBehavior="initialRoute"
             screenOptions={{
               headerShown: false,
               tabBarActiveTintColor: colors.primaryDark,

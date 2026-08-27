@@ -108,6 +108,16 @@ export default function HistoryScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.row}
               onPress={() =>
+                // Jump straight into a live, continuable conversation
+                // instead of the read-only detail view + a separate
+                // "Continue" tap — see ConversationScreen.tsx and
+                // useLiveSession's `initialTranscript`.
+                (navigation.getParent() as any)?.navigate('HomeTab', {
+                  screen: 'Conversation',
+                  params: { continueSessionId: item.id },
+                })
+              }
+              onLongPress={() =>
                 navigation.navigate('HistoryDetail', { sessionId: item.id })
               }
               activeOpacity={0.7}
