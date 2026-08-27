@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Vibration } from 'react-native';
-import {
-  check as checkPermission,
-  request as requestPermission,
-  PERMISSIONS,
-  RESULTS,
-} from 'react-native-permissions';
+import { Vibration } from 'react-native';
+import { ensureMicrophonePermission } from '../utils/micPermission';
 import {
   getCurrentAudioRoute,
   isAmbientAudioNativeModuleAvailable,
@@ -41,11 +36,6 @@ export type AmbientPhase =
   | 'speaking'
   | 'error';
 
-const MICROPHONE_PERMISSION = Platform.select({
-  ios: PERMISSIONS.IOS.MICROPHONE,
-  android: PERMISSIONS.ANDROID.RECORD_AUDIO,
-});
-
 /**
  * Short, best-effort haptic pulses marking listening-state transitions —
  * one half of the "persistent visual + haptic listening indicator" the
@@ -61,19 +51,6 @@ function pulseHaptic(pattern: number | number[]): void {
     Vibration.vibrate(pattern);
   } catch {
     // Best-effort only — see comment above.
-  }
-}
-
-async function ensureMicrophonePermission(): Promise<boolean> {
-  if (!MICROPHONE_PERMISSION) return false;
-  try {
-    const current = await checkPermission(MICROPHONE_PERMISSION as never);
-    if (current === RESULTS.GRANTED) return true;
-    if (current === RESULTS.BLOCKED) return false;
-    const requested = await requestPermission(MICROPHONE_PERMISSION as never);
-    return requested === RESULTS.GRANTED;
-  } catch {
-    return false;
   }
 }
 

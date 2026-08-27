@@ -3,6 +3,7 @@ import { getGeminiApiKey } from '../config/apiKeyStore';
 import { GeminiLiveSession } from '../config/geminiLive';
 import { MicStreamer } from '../audio/micStreamer';
 import { AudioPlaybackQueue } from '../audio/playbackQueue';
+import { ensureMicrophonePermission } from '../utils/micPermission';
 
 export type LiveSessionState =
   | 'checking-key'
@@ -137,8 +138,28 @@ export function useLiveSession(
         apiKey,
         {
           onSetupComplete: () => {
-            micRef.current?.start();
-            setState('listening');
+            // The mic must never start without RECORD_AUDIO actually
+            // granted — on a device where it isn't, the native
+            // AudioRecord never properly initializes and
+            // MicStreamer.start() crashes the app outright (found via
+            // a real device's crash log: IllegalStateException:
+            // startRecording() called on an uninitialized
+            // AudioRecord). `sessionRef.current !== session` guards
+            // against this resolving after the session's been torn
+            // down or replaced (e.g. the screen unmounted while the
+            // permission prompt was up).
+            ensureMicrophonePermission().then(granted => {
+              if (sessionRef.current !== session) return;
+              if (!granted) {
+                setErrorMessage(
+                  'Donna needs microphone access to have a conversation — allow it in your device Settings, then try again.',
+                );
+                setState('error');
+                return;
+              }
+              micRef.current?.start();
+              setState('listening');
+            });
           },
           onInputTranscript: text => appendTranscript('you', text),
           onOutputTranscript: text => appendTranscript('donna', text),
@@ -180,17 +201,25 @@ export function useLiveSession(
     [appendTranscript, resetCurrentEntry, setState],
   );
 
+  /** Re-reads the stored API key and connects if one's there — the mount effect below is just this run once, cancellably. */
+  const attemptConnect = useCallback(
+    (isCancelled: () => boolean) => {
+      getGeminiApiKey().then(key => {
+        if (isCancelled()) return;
+        if (!key) {
+          setState('no-key');
+          return;
+        }
+        apiKeyRef.current = key;
+        connect(key);
+      });
+    },
+    [connect, setState],
+  );
+
   useEffect(() => {
     let cancelled = false;
-    getGeminiApiKey().then(key => {
-      if (cancelled) return;
-      if (!key) {
-        setState('no-key');
-        return;
-      }
-      apiKeyRef.current = key;
-      connect(key);
-    });
+    attemptConnect(() => cancelled);
     return () => {
       cancelled = true;
       teardown();
@@ -199,9 +228,23 @@ export function useLiveSession(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Re-checks and reconnects. Two distinct cases share this one
+   * function: an actual connection error (`apiKeyRef` is already set —
+   * reconnect with the same key), and "no-key" (nothing to reconnect
+   * with — this is what a tab screen should call when it regains focus
+   * after the user adds a key in Settings, since a tab screen mounts
+   * once and is never remounted just by switching tabs back to it — the
+   * original mount effect's "no key yet" check would otherwise never
+   * run again).
+   */
   const retry = useCallback(() => {
-    if (apiKeyRef.current) connect(apiKeyRef.current);
-  }, [connect]);
+    if (apiKeyRef.current) {
+      connect(apiKeyRef.current);
+    } else {
+      attemptConnect(() => false);
+    }
+  }, [attemptConnect, connect]);
 
   const toggleMic = useCallback(() => {
     if (stateRef.current === 'listening') {
