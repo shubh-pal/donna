@@ -473,3 +473,49 @@ cumulative caveats above:
 - The `gemini-flash-latest` alias is deliberately un-pinned (see the
   commit for why) — if extraction quality changes noticeably, that's
   the first thing to check.
+
+## Phase 6 — fixes from real-device testing of Phase 5
+
+Direct feedback after Phase 5 was actually used on a real device with a
+real Gemini API key — the most valuable kind, since two of these were
+genuine bugs that no amount of code review in this sandbox would have
+caught.
+
+- **Voice cracked while Donna spoke.** Root cause: `AudioPlaybackQueue`
+  played every individual incoming PCM chunk as its own file/`Sound`
+  instance — a start/stop transition on the platform audio track for
+  every chunk, which is audibly a click/crack, especially at the chunk
+  sizes the Live API streams. Fixed by coalescing chunks into ~700ms
+  segments before playing (`combinePcmChunksToWavBase64`) and
+  pre-loading the next segment while the current one plays, so segment
+  boundaries are both far less frequent and gap-free. `flush()` (called
+  on turn-complete) ensures the sub-threshold tail of a response is
+  never dropped.
+- **Onboarding was a separate, explicit screen with an "I'm all set"
+  button.** Feedback: meeting Donna the first time should feel like the
+  start of an ordinary conversation, not a form. `OnboardingScreen` is
+  gone; `ConversationScreen` itself uses the onboarding persona for a
+  user whose `onboardingComplete` flag isn't set yet, in the exact same
+  UI as every conversation after it — leaving that first conversation
+  (same as leaving any other) is what completes onboarding.
+- **History defaulted to off.** Now on by default — see
+  `preferences.ts`.
+- **Mic/mute icons (and other glyphs) were emoji/Unicode placeholders.**
+  Replaced with `react-native-vector-icons` (MaterialCommunityIcons)
+  throughout. Android is fully wired and confirmed in a built APK's
+  assets; **iOS needs a human to finish linking the font in Xcode** (add
+  `ios/Donna/Fonts/MaterialCommunityIcons.ttf` to the "Copy Bundle
+  Resources" build phase) — the Info.plist half is done, the Xcode
+  project half isn't, since this environment has no Xcode to do or
+  verify that step.
+- **Memory stayed empty after a real onboarding interview.** Root
+  cause: `parseExtractedFacts` required the model's entire response to
+  be nothing but the JSON array — but models routinely add a sentence
+  of preamble or closing remark despite being told not to, and any of
+  that broke the parse every time. Fixed to pull the array out of
+  whatever surrounding text is there, and to read all response parts
+  (not just the first) in case a response is split across parts. This
+  was a real, verified-by-a-real-user bug, not a hypothetical edge
+  case — worth remembering if memory extraction ever seems to regress
+  again: check whether the model's raw response actually contains valid
+  JSON *somewhere*, first, before assuming the API call itself failed.
