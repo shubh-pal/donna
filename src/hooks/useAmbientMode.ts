@@ -25,6 +25,7 @@ import {
 } from '../config/ambientLive';
 import { GeminiLiveSession } from '../config/geminiLive';
 import { getGeminiApiKey } from '../config/apiKeyStore';
+import { buildMemoryContextBlock, listFacts } from '../config/memoryStore';
 import {
   getAmbientModeConfirmed,
   getAmbientModeEnabled,
@@ -205,6 +206,14 @@ export function useAmbientMode() {
     setBluetoothConnected(isBluetoothOutputActive(routeRef.current));
     clearTurnBuffers();
 
+    // Best-effort — an empty/failed read just means the ambient
+    // session opens with no memory context, same as before this
+    // existed, rather than blocking ambient mode from starting at all.
+    const memoryContext = await listFacts()
+      .then(buildMemoryContextBlock)
+      .catch(() => '');
+    if (startTokenRef.current !== token) return;
+
     const playback = new AudioPlaybackQueue(isPlaying => {
       if (startTokenRef.current !== token) return;
       if (isPlaying) {
@@ -260,7 +269,7 @@ export function useAmbientMode() {
           }
         },
       },
-      buildAmbientSetupMessage,
+      () => buildAmbientSetupMessage(memoryContext),
     );
     sessionRef.current = session;
     session.connect();

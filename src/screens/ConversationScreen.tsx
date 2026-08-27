@@ -17,27 +17,20 @@ import ListeningBlob from '../components/ListeningBlob';
 import PrimaryButton from '../components/PrimaryButton';
 import { colors, fonts, spacing } from '../theme/colors';
 import { getGeminiApiKey } from '../config/apiKeyStore';
-import { GeminiLiveSession } from '../config/geminiLive';
-import { MicStreamer } from '../audio/micStreamer';
-import { AudioPlaybackQueue } from '../audio/playbackQueue';
+import { buildSetupMessage } from '../config/geminiLive';
+import { extractMemoryFacts } from '../config/geminiRest';
 import { saveSession, type HistoryMessage } from '../config/historyStore';
+import {
+  addFacts,
+  buildMemoryContextBlock,
+  listFacts,
+} from '../config/memoryStore';
+import { useLiveSession, type LiveTranscriptEntry } from '../hooks/useLiveSession';
 import type { HomeTabParamList, SettingsStackParamList } from '../navigation/types';
 
 type Props = BottomTabScreenProps<HomeTabParamList, 'Conversation'>;
 
-type ConversationState =
-  | 'checking-key'
-  | 'no-key'
-  | 'connecting'
-  | 'listening'
-  | 'thinking'
-  | 'speaking'
-  | 'muted'
-  | 'error';
-
-type TranscriptEntry = { id: number; speaker: 'you' | 'donna'; text: string };
-
-const STATUS_LABEL: Record<ConversationState, string> = {
+const STATUS_LABEL: Record<string, string> = {
   'checking-key': 'One sec…',
   'no-key': 'Set up your API key',
   connecting: 'Connecting…',
@@ -48,240 +41,93 @@ const STATUS_LABEL: Record<ConversationState, string> = {
   error: 'Reconnecting…',
 };
 
-const FOCUS_CAPTION: Partial<Record<ConversationState, string>> = {
+const FOCUS_CAPTION: Record<string, string> = {
   listening: "I'm listening. Speak naturally.",
   thinking: 'One sec…',
   speaking: 'Here you go…',
   muted: 'Microphone is off.',
 };
 
+function toHistoryMessages(transcript: LiveTranscriptEntry[]): HistoryMessage[] {
+  return transcript.map(({ speaker, text }) => ({ speaker, text }));
+}
+
 /**
  * The merged conversation screen: one continuous, hands-free session —
- * no hold-to-talk. The mic streams the whole time this screen is
- * focused and unmuted; Gemini Live's own automatic voice-activity
- * detection (not disabled anywhere in `buildSetupMessage`) finds each
- * turn's boundary from the silence in that continuous stream, so the
- * app never has to mark "that's one turn" itself — it only pauses the
- * mic while Donna is actually speaking, to avoid the phone hearing its
- * own voice back. Typed messages (`ChatInputBar`) are a second way into
- * the same session, sent as a complete `clientContent` turn.
+ * no hold-to-talk. Session mechanics (connect, continuous mic streaming
+ * with automatic server-side turn detection, mic pause while Donna
+ * speaks, typed-text path) live in `useLiveSession`, shared with the
+ * onboarding interview (`OnboardingScreen.tsx`); what this screen owns
+ * is: the memory-aware system prompt, saving history on teardown, and a
+ * best-effort memory-extraction pass over each conversation.
  *
  * Unverified against a real Gemini Live session on real microphone
- * hardware for *this* continuous-mode rewrite specifically — the
- * previous hold-to-talk version was device-verified; see NOTES.md.
+ * hardware for the continuous-mode rewrite specifically — see NOTES.md.
  */
 export default function ConversationScreen({}: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<SettingsStackParamList>>();
 
-  const [state, setStateReact] = useState<ConversationState>('checking-key');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [draft, setDraft] = useState('');
   const [focusMode, setFocusMode] = useState(false);
-
-  const stateRef = useRef<ConversationState>('checking-key');
-  const apiKeyRef = useRef<string | null>(null);
-  const sessionRef = useRef<GeminiLiveSession | null>(null);
-  const micRef = useRef<MicStreamer | null>(null);
-  const playbackRef = useRef<AudioPlaybackQueue | null>(null);
-  const isQueueActiveRef = useRef(false);
-  const turnCompletePendingRef = useRef(false);
-  const nextIdRef = useRef(0);
-  const currentYouEntryRef = useRef<number | null>(null);
-  const currentDonnaEntryRef = useRef<number | null>(null);
-  const scrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  const memoryContextRef = useRef('');
   const sessionIdRef = useRef(`session-${Date.now()}`);
-  const historyMessagesRef = useRef<HistoryMessage[]>([]);
-  // Parallel to currentYouEntryRef/currentDonnaEntryRef, but indexing
-  // into historyMessagesRef instead of the transcript's own ids — kept
-  // separate so a streaming update knows exactly which history entry to
-  // grow without re-deriving it.
-  const historyIndexBySpeakerRef = useRef<{ you: number | null; donna: number | null }>(
-    { you: null, donna: null },
-  );
 
-  const setConversationState = useCallback((next: ConversationState) => {
-    stateRef.current = next;
-    setStateReact(next);
-  }, []);
+  const handleSessionEnd = useCallback((transcript: LiveTranscriptEntry[]) => {
+    if (transcript.length === 0) return;
+    const messages = toHistoryMessages(transcript);
 
-  /** Closes out the in-progress streaming entry for one speaker (turn boundary, new turn starting, etc). */
-  const resetCurrentEntry = useCallback((speaker: 'you' | 'donna') => {
-    if (speaker === 'you') currentYouEntryRef.current = null;
-    else currentDonnaEntryRef.current = null;
-    historyIndexBySpeakerRef.current[speaker] = null;
-  }, []);
+    saveSession(sessionIdRef.current, messages).catch(() => {});
 
-  const persistHistory = useCallback(() => {
-    if (historyMessagesRef.current.length === 0) return;
-    saveSession(sessionIdRef.current, historyMessagesRef.current).catch(
-      () => {
-        // Best-effort: history is a convenience, not load-bearing.
-      },
-    );
-  }, []);
-
-  const appendTranscript = useCallback(
-    (speaker: 'you' | 'donna', text: string) => {
-      const entryRef =
-        speaker === 'you' ? currentYouEntryRef : currentDonnaEntryRef;
-
-      if (entryRef.current !== null) {
-        const historyIndex = historyIndexBySpeakerRef.current[speaker];
-        if (historyIndex !== null) {
-          historyMessagesRef.current[historyIndex].text += text;
-        }
-        setTranscript(prev =>
-          prev.map(entry =>
-            entry.id === entryRef.current
-              ? { ...entry, text: entry.text + text }
-              : entry,
-          ),
-        );
-      } else {
-        const id = nextIdRef.current++;
-        entryRef.current = id;
-        historyIndexBySpeakerRef.current[speaker] =
-          historyMessagesRef.current.push({ speaker, text }) - 1;
-        setTranscript(prev => [...prev, { id, speaker, text }]);
-      }
-
-      requestAnimationFrame(() =>
-        scrollRef.current?.scrollToEnd({ animated: true }),
+    // Best-effort, fire-and-forget: never block/slow down leaving this
+    // screen on a background API call, and never surface its failure —
+    // see extractMemoryFacts' own doc comment for why it already
+    // swallows its own errors.
+    (async () => {
+      const apiKey = await getGeminiApiKey();
+      if (!apiKey) return;
+      const existing = await listFacts();
+      const newFacts = await extractMemoryFacts(
+        apiKey,
+        messages,
+        existing.map(f => f.text),
       );
-    },
+      if (newFacts.length > 0) await addFacts(newFacts, 'conversation');
+    })();
+  }, []);
+
+  // buildSetup is read via ref at the moment the websocket actually
+  // opens (see useLiveSession/GeminiLiveSession), not at render time —
+  // so it's safe for this closure to reference memoryContextRef even
+  // though the effect below that populates it runs concurrently with
+  // (not strictly before) the hook's own connect-on-mount effect. The
+  // local AsyncStorage read memory depends on is expected to resolve
+  // well before the WS handshake does.
+  const buildSetup = useCallback(
+    () => buildSetupMessage(memoryContextRef.current),
     [],
   );
 
-  const teardown = useCallback(() => {
-    micRef.current?.stop();
-    sessionRef.current?.close();
-    playbackRef.current?.dispose();
-    sessionRef.current = null;
-    playbackRef.current = null;
-    persistHistory();
-  }, [persistHistory]);
-
-  const connect = useCallback(
-    (apiKey: string) => {
-      setErrorMessage(null);
-      setConversationState('connecting');
-      resetCurrentEntry('you');
-      resetCurrentEntry('donna');
-      turnCompletePendingRef.current = false;
-
-      playbackRef.current = new AudioPlaybackQueue(isPlaying => {
-        isQueueActiveRef.current = isPlaying;
-        if (isPlaying) {
-          // Pause capture while Donna is talking so the mic doesn't pick
-          // up her own voice through the speaker (no hardware echo
-          // cancellation to rely on here) — resumed the moment she's done.
-          micRef.current?.stop();
-          setConversationState('speaking');
-        } else if (turnCompletePendingRef.current) {
-          turnCompletePendingRef.current = false;
-          resetCurrentEntry('donna');
-          if (stateRef.current !== 'muted') {
-            micRef.current?.start();
-            setConversationState('listening');
-          }
-        }
-      });
-
-      micRef.current = new MicStreamer(base64Chunk => {
-        sessionRef.current?.sendAudioChunk(base64Chunk);
-      });
-
-      const session = new GeminiLiveSession(apiKey, {
-        onSetupComplete: () => {
-          micRef.current?.start();
-          setConversationState('listening');
-        },
-        onInputTranscript: text => appendTranscript('you', text),
-        onOutputTranscript: text => appendTranscript('donna', text),
-        onAudioChunk: (data, mimeType) =>
-          playbackRef.current?.enqueue(data, mimeType),
-        onTurnComplete: () => {
-          resetCurrentEntry('you');
-          if (isQueueActiveRef.current) {
-            turnCompletePendingRef.current = true;
-          } else {
-            resetCurrentEntry('donna');
-            if (stateRef.current !== 'muted') {
-              setConversationState('listening');
-            }
-          }
-        },
-        onInterrupted: () => playbackRef.current?.clear(),
-        onError: message => {
-          setErrorMessage(message);
-          setConversationState('error');
-        },
-        onClose: () => {
-          if (stateRef.current !== 'error') {
-            setErrorMessage('Lost connection to Donna.');
-            setConversationState('error');
-          }
-        },
-      });
-      sessionRef.current = session;
-      session.connect();
-    },
-    [appendTranscript, resetCurrentEntry, setConversationState],
-  );
-
   useEffect(() => {
-    let cancelled = false;
-    getGeminiApiKey().then(key => {
-      if (cancelled) return;
-      if (!key) {
-        setConversationState('no-key');
-        return;
-      }
-      apiKeyRef.current = key;
-      connect(key);
+    listFacts().then(facts => {
+      memoryContextRef.current = buildMemoryContextBlock(facts);
     });
-    return () => {
-      cancelled = true;
-      teardown();
-    };
-    // Intentionally run once per mount — reconnecting on every render
-    // would tear down and restart the websocket session constantly.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleRetry = () => {
-    if (apiKeyRef.current) connect(apiKeyRef.current);
-  };
+  const { state, errorMessage, transcript, retry, toggleMic, sendText } =
+    useLiveSession(buildSetup, handleSessionEnd);
 
-  const handleToggleMic = () => {
-    if (stateRef.current === 'listening') {
-      micRef.current?.stop();
-      sessionRef.current?.endAudioStream();
-      setConversationState('muted');
-    } else if (stateRef.current === 'muted') {
-      micRef.current?.start();
-      setConversationState('listening');
-    }
-  };
-
-  const handleSend = () => {
-    const text = draft.trim();
-    if (!text || !sessionRef.current) return;
-    resetCurrentEntry('you');
-    resetCurrentEntry('donna');
-    historyMessagesRef.current.push({ speaker: 'you', text });
-    setTranscript(prev => [
-      ...prev,
-      { id: nextIdRef.current++, speaker: 'you', text },
-    ]);
-    sessionRef.current.sendText(text);
-    setDraft('');
-    setConversationState('thinking');
+  const scrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
+  useEffect(() => {
     requestAnimationFrame(() =>
       scrollRef.current?.scrollToEnd({ animated: true }),
     );
+  }, [transcript]);
+
+  const handleSend = () => {
+    if (!draft.trim()) return;
+    sendText(draft);
+    setDraft('');
   };
 
   if (state === 'no-key') {
@@ -324,7 +170,7 @@ export default function ConversationScreen({}: Props) {
           title={state === 'muted' ? 'Resume Listening' : 'Stop Listening'}
           variant="secondary"
           onPress={() => {
-            if (state !== 'muted') handleToggleMic();
+            if (state !== 'muted') toggleMic();
             setFocusMode(false);
           }}
         />
@@ -387,7 +233,7 @@ export default function ConversationScreen({}: Props) {
       {state === 'error' ? (
         <View style={styles.errorBar}>
           <Text style={styles.errorText}>{errorMessage}</Text>
-          <PrimaryButton title="Try again" onPress={handleRetry} />
+          <PrimaryButton title="Try again" onPress={retry} />
         </View>
       ) : (
         <View style={styles.inputWrap}>
@@ -396,7 +242,7 @@ export default function ConversationScreen({}: Props) {
             onChangeText={setDraft}
             onSend={handleSend}
             micActive={state === 'listening' || state === 'speaking'}
-            onToggleMic={handleToggleMic}
+            onToggleMic={toggleMic}
             micDisabled={state === 'connecting' || state === 'checking-key'}
           />
         </View>
