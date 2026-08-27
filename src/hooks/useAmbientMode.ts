@@ -253,6 +253,12 @@ export function useAmbientMode() {
             chunks.forEach(chunk =>
               playbackRef.current?.enqueue(chunk.base64Pcm, chunk.mimeType),
             );
+            // The whole turn's audio was just enqueued at once (ambient
+            // mode buffers a full turn before deciding whether to play
+            // it, unlike the streaming Conversation screen) — flush so
+            // the tail under the coalescing threshold isn't left
+            // sitting unplayed.
+            playbackRef.current?.flush();
           }
         },
         onInterrupted: () => {

@@ -146,6 +146,13 @@ export function useLiveSession(
             playbackRef.current?.enqueue(data, mimeType),
           onTurnComplete: () => {
             resetCurrentEntry('you');
+            // Whatever's still buffered below the coalescing threshold
+            // is the tail of this turn's audio — flush it now so it
+            // doesn't sit unplayed. This can itself start playback
+            // (onPlayingChange fires synchronously — see
+            // playbackQueue.ts), so it must happen before the
+            // isQueueActiveRef check below.
+            playbackRef.current?.flush();
             if (isQueueActiveRef.current) {
               turnCompletePendingRef.current = true;
             } else {

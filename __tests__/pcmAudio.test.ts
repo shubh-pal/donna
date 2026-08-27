@@ -1,5 +1,7 @@
 import { Buffer } from 'buffer';
 import {
+  bytesForDurationMs,
+  combinePcmChunksToWavBase64,
   pcmBase64ToWavBase64,
   sampleRateFromMimeType,
 } from '../src/audio/pcmAudio';
@@ -65,5 +67,50 @@ describe('pcmBase64ToWavBase64', () => {
     const wavBytes = Buffer.from(wavBase64, 'base64');
     expect(wavBytes.length).toBe(44);
     expect(wavBytes.readUInt32LE(40)).toBe(0);
+  });
+});
+
+describe('combinePcmChunksToWavBase64', () => {
+  it('concatenates multiple chunks into one WAV in order', () => {
+    const chunkA = Buffer.from([1, 2, 3, 4]).toString('base64');
+    const chunkB = Buffer.from([5, 6, 7, 8]).toString('base64');
+    const chunkC = Buffer.from([9, 10]).toString('base64');
+
+    const wavBase64 = combinePcmChunksToWavBase64([chunkA, chunkB, chunkC], 16000);
+    const wavBytes = Buffer.from(wavBase64, 'base64');
+
+    expect(wavBytes.length).toBe(44 + 10);
+    expect(wavBytes.readUInt32LE(40)).toBe(10); // data chunk size
+    expect(wavBytes.readUInt32LE(24)).toBe(16000);
+    expect(Array.from(wavBytes.subarray(44))).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+  });
+
+  it('produces a valid (empty-payload) WAV for an empty chunk list', () => {
+    const wavBase64 = combinePcmChunksToWavBase64([]);
+    const wavBytes = Buffer.from(wavBase64, 'base64');
+    expect(wavBytes.length).toBe(44);
+    expect(wavBytes.readUInt32LE(40)).toBe(0);
+  });
+
+  it('defaults to a 24kHz sample rate when none is given', () => {
+    const wavBase64 = combinePcmChunksToWavBase64([
+      Buffer.from([1, 2]).toString('base64'),
+    ]);
+    const wavBytes = Buffer.from(wavBase64, 'base64');
+    expect(wavBytes.readUInt32LE(24)).toBe(24000);
+  });
+});
+
+describe('bytesForDurationMs', () => {
+  it('computes bytes for 16-bit mono PCM at a given sample rate and duration', () => {
+    // 24000 Hz * 1 channel * 2 bytes/sample * 0.7s = 33600 bytes.
+    expect(bytesForDurationMs(700, 24000)).toBe(33600);
+  });
+
+  it('scales linearly with duration', () => {
+    expect(bytesForDurationMs(1000, 16000)).toBe(32000);
+    expect(bytesForDurationMs(500, 16000)).toBe(16000);
   });
 });

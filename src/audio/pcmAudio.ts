@@ -63,3 +63,38 @@ export function pcmBase64ToWavBase64(
   const header = buildWavHeader(pcmBytes.length, sampleRate);
   return Buffer.concat([header, pcmBytes]).toString('base64');
 }
+
+/**
+ * Concatenates several base64 PCM chunks (as they arrive from the Live
+ * API, one per `onAudioChunk` event) into a single WAV file's worth of
+ * base64. Used by `playbackQueue.ts` to coalesce many small incoming
+ * chunks into fewer, larger playback segments — see that file's doc
+ * comment for why: playing every individual small chunk as its own
+ * file/`Sound` instance produces an audible click/crack at every
+ * segment boundary (a start/stop transition on the platform audio
+ * track), and fewer, larger segments means fewer boundaries.
+ */
+export function combinePcmChunksToWavBase64(
+  base64Chunks: string[],
+  sampleRate: number = DEFAULT_SAMPLE_RATE,
+): string {
+  const combined = Buffer.concat(
+    base64Chunks.map(chunk => Buffer.from(chunk, 'base64')),
+  );
+  const header = buildWavHeader(combined.length, sampleRate);
+  return Buffer.concat([header, combined]).toString('base64');
+}
+
+/**
+ * How many bytes of 16-bit mono PCM correspond to `ms` milliseconds at
+ * `sampleRate` — the unit `playbackQueue.ts` buffers incoming chunks
+ * against before flushing them into one playable segment.
+ */
+export function bytesForDurationMs(
+  ms: number,
+  sampleRate: number,
+  bitsPerSample = BITS_PER_SAMPLE,
+  numChannels = NUM_CHANNELS,
+): number {
+  return Math.round((sampleRate * numChannels * (bitsPerSample / 8) * ms) / 1000);
+}
