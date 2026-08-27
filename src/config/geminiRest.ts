@@ -104,18 +104,27 @@ Output (JSON array of strings only):`;
 /**
  * Parses the model's raw text response into a string array — pulled out
  * as its own pure function so the "model didn't follow instructions"
- * cases (markdown code fences, a leading sentence before the JSON,
- * genuinely malformed output) are unit-testable without a network call.
- * Never throws: anything that doesn't parse to a string array is
- * treated as "no facts found" rather than an error, since this is a
- * best-effort background feature that must never surface an error to
- * the user over something as low-stakes as memory extraction.
+ * cases are unit-testable without a network call. Never throws:
+ * anything that doesn't parse to a string array is treated as "no facts
+ * found" rather than an error, since this is a best-effort background
+ * feature that must never surface an error to the user over something
+ * as low-stakes as memory extraction.
+ *
+ * Deliberately tolerant of the model *not* following "output ONLY a
+ * JSON array" to the letter — in practice it very often doesn't, and
+ * this function requiring the whole response to be nothing but the
+ * array was a real bug (memory staying empty after a genuine
+ * conversation, because the model wrapped the array in so much as one
+ * sentence of preamble). So: strip a markdown code fence if present,
+ * then pull out the first `[...]` span from whatever's left rather than
+ * demanding the entire string be valid JSON on its own.
  */
 export function parseExtractedFacts(rawText: string): string[] {
-  // Strip a markdown code fence if the model added one despite being
-  // asked not to — a very common way instruction-following slips.
   const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenceMatch ? fenceMatch[1] : rawText).trim();
+  const afterFence = fenceMatch ? fenceMatch[1] : rawText;
+
+  const arrayMatch = afterFence.match(/\[[\s\S]*\]/);
+  const candidate = (arrayMatch ? arrayMatch[0] : afterFence).trim();
 
   try {
     const parsed = JSON.parse(candidate);
@@ -163,9 +172,23 @@ export async function extractMemoryFacts(
     if (!response.ok) return [];
 
     const json = await response.json();
-    const rawText: unknown =
-      json?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (typeof rawText !== 'string') return [];
+    // Concatenate every part's text rather than assuming the array is
+    // in parts[0] — some models split a response across multiple parts
+    // (e.g. a "thinking" preamble ahead of the actual answer), and
+    // parseExtractedFacts below already tolerates surrounding prose, so
+    // there's no reason to risk missing the array by only looking at
+    // the first part.
+    const parts = json?.candidates?.[0]?.content?.parts;
+    const rawText = Array.isArray(parts)
+      ? parts
+          .map((part: unknown) =>
+            typeof (part as { text?: unknown })?.text === 'string'
+              ? (part as { text: string }).text
+              : '',
+          )
+          .join('')
+      : '';
+    if (!rawText) return [];
 
     return parseExtractedFacts(rawText);
   } catch {

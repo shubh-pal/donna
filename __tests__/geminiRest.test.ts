@@ -95,6 +95,20 @@ describe('parseExtractedFacts', () => {
     expect(parseExtractedFacts(raw)).toEqual(['Lives in Denver']);
   });
 
+  it('parses a JSON array the model wrapped in prose despite instructions not to — the real bug that left memory empty after a genuine interview', () => {
+    const raw =
+      'Sure, here are the facts I picked up from that conversation:\n["Works as a nurse", "Has two cats"]\nLet me know if you need anything else!';
+    expect(parseExtractedFacts(raw)).toEqual([
+      'Works as a nurse',
+      'Has two cats',
+    ]);
+  });
+
+  it('parses an array preceded by a "thinking" preamble with no fence and no trailing text', () => {
+    const raw = 'Thinking about what stood out...\n\n["Prefers email over calls"]';
+    expect(parseExtractedFacts(raw)).toEqual(['Prefers email over calls']);
+  });
+
   it('returns an empty array for an empty JSON array', () => {
     expect(parseExtractedFacts('[]')).toEqual([]);
   });
@@ -109,8 +123,15 @@ describe('parseExtractedFacts', () => {
     expect(parseExtractedFacts('not json at all')).toEqual([]);
   });
 
-  it('returns an empty array when the JSON parses but is not an array', () => {
-    expect(parseExtractedFacts('{"facts": ["x"]}')).toEqual([]);
+  it('still finds the array even if the model wraps it in an object instead of returning it bare', () => {
+    // Not the instructed shape, but the array-extraction regex finds
+    // the inner array anyway — more useful than discarding a
+    // perfectly good answer over a wrapper the model added.
+    expect(parseExtractedFacts('{"facts": ["x"]}')).toEqual(['x']);
+  });
+
+  it('returns an empty array when there is no array anywhere in the response', () => {
+    expect(parseExtractedFacts('{"facts": "none found"}')).toEqual([]);
   });
 });
 
@@ -146,6 +167,34 @@ describe('extractMemoryFacts', () => {
       [],
     );
     expect(facts).toEqual(['New fact one']);
+  });
+
+  it('concatenates multiple response parts rather than only reading the first one', async () => {
+    globalThis.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    { text: 'Thinking it over...\n' },
+                    { text: '["Fact from a later part"]' },
+                  ],
+                },
+              },
+            ],
+          }),
+      } as Response),
+    ) as unknown as typeof fetch;
+
+    const facts = await extractMemoryFacts(
+      'key',
+      [{ speaker: 'you', text: 'hello' }],
+      [],
+    );
+    expect(facts).toEqual(['Fact from a later part']);
   });
 
   it('resolves to an empty array on a non-ok response rather than throwing', async () => {
