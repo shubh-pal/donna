@@ -37,6 +37,22 @@ describe('buildAmbientSetupMessage', () => {
     expect(message.setup.inputAudioTranscription).toEqual({});
     expect(message.setup.outputAudioTranscription).toEqual({});
   });
+
+  it('appends a memory context block onto the ambient persona when given one', () => {
+    const message = JSON.parse(
+      buildAmbientSetupMessage('\n\nWhat you already know: - likes jazz'),
+    );
+    const text = message.setup.systemInstruction.parts[0].text;
+    expect(text.startsWith(AMBIENT_SYSTEM_PROMPT)).toBe(true);
+    expect(text).toContain('likes jazz');
+  });
+
+  it('omits the memory block entirely with no memory context (default)', () => {
+    const message = JSON.parse(buildAmbientSetupMessage());
+    expect(message.setup.systemInstruction.parts[0].text).toBe(
+      AMBIENT_SYSTEM_PROMPT,
+    );
+  });
 });
 
 describe('shouldSuppressAmbientReply', () => {

@@ -1,12 +1,16 @@
 import {
   buildAudioChunkMessage,
   buildAudioStreamEndMessage,
+  buildOnboardingSetupMessage,
   buildSetupMessage,
   buildTextTurnMessage,
   decodeServerMessageData,
+  DONNA_SYSTEM_PROMPT,
   GEMINI_LIVE_MODEL,
   LIVE_INPUT_MIME_TYPE,
+  ONBOARDING_SYSTEM_PROMPT,
   parseLiveServerMessage,
+  withMemoryContext,
 } from '../src/config/geminiLive';
 
 describe('parseLiveServerMessage', () => {
@@ -162,6 +166,44 @@ describe('outgoing message builders', () => {
       { role: 'user', parts: [{ text: 'Plan my day' }] },
     ]);
     expect(message.clientContent.turnComplete).toBe(true);
+  });
+
+  it('omits memory context from the setup message by default', () => {
+    const message = JSON.parse(buildSetupMessage());
+    expect(message.setup.systemInstruction.parts[0].text).toBe(
+      DONNA_SYSTEM_PROMPT,
+    );
+  });
+
+  it('appends a memory context block onto the persona when given one', () => {
+    const memory = '\n\nWhat you already know: - works as a vet';
+    const message = JSON.parse(buildSetupMessage(memory));
+    const text = message.setup.systemInstruction.parts[0].text;
+    expect(text.startsWith(DONNA_SYSTEM_PROMPT)).toBe(true);
+    expect(text).toContain('works as a vet');
+  });
+
+  it('builds the onboarding setup message with the onboarding persona, no memory', () => {
+    const message = JSON.parse(buildOnboardingSetupMessage());
+    expect(message.setup.model).toBe(GEMINI_LIVE_MODEL);
+    expect(message.setup.systemInstruction.parts[0].text).toBe(
+      ONBOARDING_SYSTEM_PROMPT,
+    );
+    expect(message.setup.generationConfig.responseModalities).toEqual([
+      'AUDIO',
+    ]);
+  });
+});
+
+describe('withMemoryContext', () => {
+  it('returns the base prompt unchanged when there is no memory context', () => {
+    expect(withMemoryContext('base prompt', '')).toBe('base prompt');
+  });
+
+  it('appends the memory context onto the base prompt', () => {
+    expect(withMemoryContext('base prompt', ' extra context')).toBe(
+      'base prompt extra context',
+    );
   });
 });
 

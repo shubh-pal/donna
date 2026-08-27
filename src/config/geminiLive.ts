@@ -34,6 +34,43 @@ assistant reading a script, and never a wall of text. Never say you are \
 an AI language model or break character. If you don't know something, \
 say so plainly instead of hedging.`;
 
+export const ONBOARDING_SYSTEM_PROMPT = `You are Donna — in the spirit of Donna Paulsen: sharp, witty, dry sense \
+of humor, unflappable, extremely competent. This is the very first time \
+you're meeting this user. Your job right now is NOT a normal conversation \
+— it's a short, warm getting-to-know-you interview, like a great new \
+assistant would actually do on day one.
+
+Ask about things that would genuinely help you assist them well later: \
+their name, what they do (work/studies), what they're currently focused \
+on or juggling, how they like to communicate (brief and direct vs. more \
+detail, formal vs. casual), and anything else that comes up naturally — \
+interests, people they mention often, recurring commitments. Ask ONE \
+question at a time, actually listen to the answer before moving on, and \
+let it flow like a real conversation, not a form. Keep it to a handful of \
+questions — five or six exchanges is plenty, not an interrogation.
+
+Once you feel you have a genuinely useful first picture of who they are, \
+wrap up warmly and let them know you're all set — say something like \
+"Alright, I've got what I need for now" so it's clear the interview is \
+winding down. Keep every turn short and conversational, like Donna \
+actually talking. Never say you are an AI language model or break \
+character.`;
+
+/**
+ * Splices a memory-context block (from `memoryStore.buildMemoryContextBlock`)
+ * onto a base persona prompt. A no-op (returns `basePrompt` unchanged)
+ * when there's no memory yet — callers can pass `''` unconditionally
+ * rather than branching. Shared by the conversation, ambient, and
+ * onboarding setup builders so "how memory gets attached to a persona"
+ * has exactly one implementation.
+ */
+export function withMemoryContext(
+  basePrompt: string,
+  memoryContext: string,
+): string {
+  return memoryContext ? `${basePrompt}${memoryContext}` : basePrompt;
+}
+
 // ---------------------------------------------------------------------
 // Server -> client message parsing (pure, unit-tested)
 // ---------------------------------------------------------------------
@@ -122,11 +159,37 @@ export function parseLiveServerMessage(raw: string): LiveServerEvent[] {
 // Client -> server message builders (pure, unit-tested)
 // ---------------------------------------------------------------------
 
-export function buildSetupMessage(): string {
+/**
+ * @param memoryContext From `memoryStore.buildMemoryContextBlock` — the
+ * facts Donna already knows about this user, spliced onto the base
+ * persona via `withMemoryContext`. Defaults to `''` (no memory attached)
+ * so every existing call site keeps working unchanged.
+ */
+export function buildSetupMessage(memoryContext = ''): string {
   return JSON.stringify({
     setup: {
       model: GEMINI_LIVE_MODEL,
-      systemInstruction: { parts: [{ text: DONNA_SYSTEM_PROMPT }] },
+      systemInstruction: {
+        parts: [{ text: withMemoryContext(DONNA_SYSTEM_PROMPT, memoryContext) }],
+      },
+      generationConfig: { responseModalities: ['AUDIO'] },
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
+    },
+  });
+}
+
+/**
+ * The onboarding interview's setup message — same shape as
+ * `buildSetupMessage`, `ONBOARDING_SYSTEM_PROMPT` in place of the
+ * regular persona. No memory context: the whole point of this session
+ * is to *create* the first memory, there's nothing to attach yet.
+ */
+export function buildOnboardingSetupMessage(): string {
+  return JSON.stringify({
+    setup: {
+      model: GEMINI_LIVE_MODEL,
+      systemInstruction: { parts: [{ text: ONBOARDING_SYSTEM_PROMPT }] },
       generationConfig: { responseModalities: ['AUDIO'] },
       inputAudioTranscription: {},
       outputAudioTranscription: {},

@@ -31,7 +31,7 @@
  * future, this is the file to update.
  */
 
-import { GEMINI_LIVE_MODEL } from './geminiLive';
+import { GEMINI_LIVE_MODEL, withMemoryContext } from './geminiLive';
 import {
   canDonnaSpeakThroughThisRoute,
   type AudioRouteInfo,
@@ -76,11 +76,21 @@ Never say you are an AI language model or break character.`;
  * as a separate function rather than parameterizing the existing one so
  * Phase 2's hold-to-talk path (and its tests) stay untouched.
  */
-export function buildAmbientSetupMessage(): string {
+/**
+ * @param memoryContext From `memoryStore.buildMemoryContextBlock` —
+ * same mechanism as the foreground Conversation screen, so an ambient
+ * interjection can also draw on what Donna already knows about the
+ * user. Defaults to `''`.
+ */
+export function buildAmbientSetupMessage(memoryContext = ''): string {
   return JSON.stringify({
     setup: {
       model: GEMINI_LIVE_MODEL,
-      systemInstruction: { parts: [{ text: AMBIENT_SYSTEM_PROMPT }] },
+      systemInstruction: {
+        parts: [
+          { text: withMemoryContext(AMBIENT_SYSTEM_PROMPT, memoryContext) },
+        ],
+      },
       generationConfig: { responseModalities: ['AUDIO'] },
       inputAudioTranscription: {},
       outputAudioTranscription: {},
