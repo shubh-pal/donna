@@ -547,3 +547,34 @@ the actual crash trace, then `adb install` + `adb shell am start` +
 available; there is no Android emulator available in whatever sandbox
 is building this (confirmed disabled at the platform level, not just
 absent — don't waste time trying to install/boot one again).
+
+## Post-Phase-6, round 2: two more crash/stuck-state reports
+
+Same real-device-plus-adb-logcat method caught two more real bugs
+after the Firebase fix above:
+
+1. **Crash starting the mic**: `IllegalStateException: startRecording()
+   called on an uninitialized AudioRecord`. The continuous Conversation/
+   onboarding session never checked for `RECORD_AUDIO` permission
+   before starting mic capture — ambient mode already had this check
+   (`ensureMicrophonePermission`, now shared via
+   `utils/micPermission.ts`), the foreground path just never got it
+   when Phase 4 turned hold-to-talk into always-on. Fixed in
+   `useLiveSession.ts`'s `onSetupComplete`.
+2. **Stuck on "no API key" after actually saving one**: the Home tab
+   is never remounted by switching tabs, and the key check only ran
+   once, on mount. Fixed with a `useFocusEffect` that re-checks via
+   `retry()` whenever the screen regains focus while still in the
+   `no-key` state.
+
+Both verified the same way as the Firebase fix: installed on the
+reporting user's actual device via `adb install`, launched, confirmed
+clean in `adb logcat`, screenshotted the result. **This is the
+reliable verification loop for this project going forward** — build,
+`adb install -r` onto a connected real device, `adb logcat` while
+reproducing, screenshot to confirm the fix. Don't guess at fixes for a
+crash report without pulling the real stack trace first if a device is
+available; both of these bugs would have been very hard to guess
+correctly from source reading alone (the mic crash in particular — it
+only manifests on a device where the permission hasn't been granted
+yet, which nothing in this sandbox can trigger).
