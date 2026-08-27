@@ -11,9 +11,21 @@ import {
 } from 'firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { GOOGLE_WEB_CLIENT_ID } from '@env';
-import { auth } from './firebase';
+import { auth, firebaseInitError } from './firebase';
 
 let googleConfigured = false;
+
+/** Thrown by every function below when Firebase failed to initialize — see firebase.ts's `firebaseInitError` doc comment for why this exists. */
+function requireAuth() {
+  if (!auth) {
+    throw new Error(
+      firebaseInitError
+        ? `Sign-in isn't set up correctly on this device (${firebaseInitError.message}). Please check the app's Firebase configuration.`
+        : "Sign-in isn't available right now. Please try again in a moment.",
+    );
+  }
+  return auth;
+}
 
 /**
  * Configures the native Google Sign-In module. Safe to call multiple
@@ -28,9 +40,20 @@ export function configureGoogleSignIn(): void {
   googleConfigured = true;
 }
 
+/**
+ * Never throws even if Firebase failed to initialize — reports "signed
+ * out" once and returns a no-op unsubscribe, so the app still opens
+ * normally (to the sign-in screens) instead of crashing. An actual
+ * sign-in *attempt* in that state fails through the normal, already-
+ * handled error path (see `requireAuth` above), not a crash.
+ */
 export function subscribeToAuthChanges(
   callback: (user: User | null) => void,
 ): () => void {
+  if (!auth) {
+    callback(null);
+    return () => {};
+  }
   return onAuthStateChanged(auth, callback);
 }
 
@@ -40,7 +63,7 @@ export async function signUpWithEmail(
   password: string,
 ): Promise<User> {
   const credential = await createUserWithEmailAndPassword(
-    auth,
+    requireAuth(),
     email,
     password,
   );
@@ -54,15 +77,20 @@ export async function signInWithEmail(
   email: string,
   password: string,
 ): Promise<User> {
-  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const credential = await signInWithEmailAndPassword(
+    requireAuth(),
+    email,
+    password,
+  );
   return credential.user;
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email);
+  await sendPasswordResetEmail(requireAuth(), email);
 }
 
 export async function signInWithGoogle(): Promise<User> {
+  const activeAuth = requireAuth();
   configureGoogleSignIn();
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   const { data } = await GoogleSignin.signIn();
@@ -71,7 +99,7 @@ export async function signInWithGoogle(): Promise<User> {
     throw new Error('Google sign-in did not return an ID token.');
   }
   const googleCredential = GoogleAuthProvider.credential(idToken);
-  const credential = await signInWithCredential(auth, googleCredential);
+  const credential = await signInWithCredential(activeAuth, googleCredential);
   return credential.user;
 }
 
@@ -81,5 +109,5 @@ export async function signOutUser(): Promise<void> {
   } catch {
     // User may not have signed in with Google — ignore.
   }
-  await signOut(auth);
+  if (auth) await signOut(auth);
 }
