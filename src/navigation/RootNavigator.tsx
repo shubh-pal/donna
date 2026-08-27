@@ -178,7 +178,15 @@ function AppTabs() {
               component={HomeTabNavigator}
               options={{
                 tabBarLabel: 'Home',
-                tabBarStyle: { display: 'none' },
+                // Visible by default — the normal chat view needs the
+                // tab bar to actually reach History/Settings (there's
+                // no other way there from Home). ConversationScreen
+                // hides it itself, imperatively via
+                // navigation.getParent()?.setOptions, only for its
+                // full-screen immersive "focus mode" view, and restores
+                // it on the way out. See the bug this fixes: the tab
+                // bar used to be hidden unconditionally here, which
+                // trapped the user on Home with no way to switch tabs.
                 tabBarIcon: renderHomeIcon,
               }}
             />

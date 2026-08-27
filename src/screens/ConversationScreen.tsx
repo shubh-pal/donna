@@ -82,6 +82,26 @@ export default function ConversationScreen({}: Props) {
 
   const [draft, setDraft] = useState('');
   const [focusMode, setFocusMode] = useState(false);
+
+  // The bottom tab bar is visible by default (see RootNavigator.tsx) —
+  // hidden only for this screen's own full-screen "focus mode" view,
+  // imperatively, since that's local state the parent Tab.Navigator has
+  // no other way to know about. Restored on the way out and on
+  // unmount, so leaving this screen never strands the tab bar hidden.
+  useEffect(() => {
+    const tabNavigation = navigation.getParent();
+    tabNavigation?.setOptions({
+      tabBarStyle: focusMode
+        ? { display: 'none' }
+        : { backgroundColor: colors.surface, borderTopColor: colors.borderSoft },
+    });
+    return () => {
+      tabNavigation?.setOptions({
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.borderSoft },
+      });
+    };
+  }, [focusMode, navigation]);
+
   const memoryContextRef = useRef('');
   const sessionIdRef = useRef(`session-${Date.now()}`);
   // Captured once, at mount — RootNavigator only renders this screen
