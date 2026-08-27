@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import ChatBubble from '../components/ChatBubble';
 import ChatInputBar from '../components/ChatInputBar';
@@ -146,6 +146,23 @@ export default function ConversationScreen({}: Props) {
 
   const { state, errorMessage, transcript, retry, toggleMic, sendText } =
     useLiveSession(buildSetup, handleSessionEnd);
+
+  // The Home tab is never remounted just by switching tabs (React
+  // Navigation keeps tab screens mounted), so useLiveSession's own
+  // "check for a key" effect — which only runs once, on mount — never
+  // gets a second chance to notice a key that got added *after* this
+  // screen first mounted with none. Without this, a user who opens the
+  // app before adding a key, then adds one in Settings and comes back,
+  // sees "no key" forever even though one is now saved. `retry()`
+  // already knows how to re-check from scratch when there's no key on
+  // file yet — see useLiveSession.ts.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  useFocusEffect(
+    useCallback(() => {
+      if (stateRef.current === 'no-key') retry();
+    }, [retry]),
+  );
 
   const scrollRef = useRef<React.ElementRef<typeof ScrollView>>(null);
   useEffect(() => {
