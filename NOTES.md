@@ -519,3 +519,31 @@ caught.
   case — worth remembering if memory extraction ever seems to regress
   again: check whether the model's raw response actually contains valid
   JSON *somewhere*, first, before assuming the API call itself failed.
+
+## Post-Phase-6: app crashed on open (a real, verified crash)
+
+Fixed in commit "Fix: app crashed on open". Two distinct things worth
+remembering separately:
+
+1. **The trigger was environmental, not a code bug**: whoever's
+   building this needs their own real `.env` with real Firebase values
+   (`.env` is git-ignored, by design — never committed). A fresh
+   `git clone` — including a fresh cloud-agent session starting over —
+   has no `.env` at all. Building and shipping an APK without one
+   doesn't fail the build (Firebase config just becomes `undefined`
+   values); it fails at runtime, immediately, on the user's device.
+   **Before building a release APK to hand to someone, always confirm
+   a real `.env` is actually in place first** — this exact mistake
+   already happened once.
+2. **The app crashing outright over that was a real, independent bug**,
+   fixed properly (see the commit): a bad/missing Firebase config now
+   degrades to "sign-in isn't working," not "the app won't open," no
+   matter what causes it in the future.
+
+Verified via a real device connected over USB (`adb logcat` to capture
+the actual crash trace, then `adb install` + `adb shell am start` +
+`adb shell screencap` to confirm the fix) — this is the way to debug
+"it crashes" reports going forward when a physical device is
+available; there is no Android emulator available in whatever sandbox
+is building this (confirmed disabled at the platform level, not just
+absent — don't waste time trying to install/boot one again).
