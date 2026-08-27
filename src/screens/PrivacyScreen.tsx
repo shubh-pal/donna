@@ -40,7 +40,7 @@ export default function PrivacyScreen({ navigation }: Props) {
         <View style={styles.card}>
           <SettingRow
             label="Save conversation history"
-            description="Off by default. When on, Donna keeps a local record of what you talk about, viewable in the History tab."
+            description="On by default. Donna keeps a local record of what you talk about, viewable in the History tab — turn this off anytime, which also clears what's already saved."
           >
             <Switch value={saveHistory} onValueChange={handleToggleHistory} />
           </SettingRow>

@@ -12,13 +12,7 @@ describe('historyStore', () => {
     await clearAllSessions();
   });
 
-  it('does not save anything while the history preference is off (default)', async () => {
-    await saveSession('s1', [{ speaker: 'you', text: 'hello' }]);
-    await expect(listSessions()).resolves.toEqual([]);
-  });
-
-  it('saves a session once the history preference is on, titled from the first user message', async () => {
-    await setSaveHistoryEnabled(true);
+  it('saves a session by default (the history preference defaults to on), titled from the first user message', async () => {
     await saveSession('s1', [
       { speaker: 'you', text: 'Plan my day' },
       { speaker: 'donna', text: "Here's the plan." },
@@ -28,6 +22,12 @@ describe('historyStore', () => {
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({ id: 's1', title: 'Plan my day' });
     expect(sessions[0].messages).toHaveLength(2);
+  });
+
+  it('does not save anything once the history preference is explicitly turned off', async () => {
+    await setSaveHistoryEnabled(false);
+    await saveSession('s1', [{ speaker: 'you', text: 'hello' }]);
+    await expect(listSessions()).resolves.toEqual([]);
   });
 
   it('overwrites an existing session by id rather than duplicating it', async () => {

@@ -11,15 +11,16 @@ const AMBIENT_MODE_CONFIRMED_KEY = '@donna/ambient_mode_confirmed_v1';
 const ONBOARDING_COMPLETE_KEY = '@donna/onboarding_complete_v1';
 
 /**
- * Whether Donna should keep a local record of past conversations.
- * Off by default — Phase 2 doesn't yet persist any transcript when this
- * is off (or on, for that matter; see NOTES.md), but the app-wide
- * setting is wired up now so the Conversation screen and future phases
- * have a single source of truth to check.
+ * Whether Donna should keep a local record of past conversations. On
+ * by default (Phase 5) — history and memory extraction both read this,
+ * and a user who wants neither can turn it off from the Privacy screen,
+ * which also clears whatever's already stored the moment it's flipped
+ * off. `null` (never explicitly set) is treated as "on"; only an
+ * explicit `'false'` write turns it off.
  */
 export async function getSaveHistoryEnabled(): Promise<boolean> {
   const value = await AsyncStorage.getItem(SAVE_HISTORY_KEY);
-  return value === 'true';
+  return value !== 'false';
 }
 
 export async function setSaveHistoryEnabled(enabled: boolean): Promise<void> {

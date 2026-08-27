@@ -8,8 +8,8 @@ import {
 } from '../src/config/preferences';
 
 describe('preferences: save conversation history', () => {
-  it('defaults to false when never set', async () => {
-    await expect(getSaveHistoryEnabled()).resolves.toBe(false);
+  it('defaults to true when never set', async () => {
+    await expect(getSaveHistoryEnabled()).resolves.toBe(true);
   });
 
   it('persists true/false across reads', async () => {
@@ -18,6 +18,11 @@ describe('preferences: save conversation history', () => {
 
     await setSaveHistoryEnabled(false);
     await expect(getSaveHistoryEnabled()).resolves.toBe(false);
+
+    // And back on again — not just "false survives", the default
+    // isn't a one-way trapdoor.
+    await setSaveHistoryEnabled(true);
+    await expect(getSaveHistoryEnabled()).resolves.toBe(true);
   });
 });
 
