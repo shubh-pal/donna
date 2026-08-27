@@ -424,3 +424,52 @@ Phase 4). Specifically worth checking on a real device:
   this environment — the Android emulator is disabled at the sandbox
   level here (not a project limitation). A human should compare the
   running app to the reference designs directly.
+
+## Phase 5 — central memory + onboarding interview
+
+Requested after Phase 4: Donna should ask questions up front to get to
+know the user, and keep a "central memory" that grows from ongoing
+conversations, visible and editable by the user.
+
+**What's new:**
+- **`memoryStore.ts`**: a flat, on-device list of short facts (not a
+  structured profile) — the storage shape a Live session's system
+  prompt can use directly, with no translation step.
+- **`extractMemoryFacts`** (`geminiRest.ts`): a best-effort REST call
+  (not Live) that reads one conversation's transcript and proposes new
+  facts worth keeping, run after both regular conversations and the
+  onboarding interview. Never throws — always resolves to `[]` on any
+  failure, since a failed memory update must never interrupt the
+  conversation it runs after.
+- **Memory-aware prompts**: `buildSetupMessage`/`buildAmbientSetupMessage`
+  both accept an optional memory-context block, so both the foreground
+  Conversation screen and ambient mode open sessions that already know
+  what's been learned so far.
+- **`OnboardingScreen`**: a new third top-level branch in
+  `RootNavigator` (alongside the auth stack and the main tabs) — a
+  freshly signed-in user is walked through API key setup, then a
+  guided interview (a distinct persona, `ONBOARDING_SYSTEM_PROMPT`,
+  reusing the same `useLiveSession` mechanics as real conversation
+  mode) before ever reaching the main app. Skippable, and redoable
+  later from Settings ("Redo Getting-to-Know-You Interview").
+- **`MemoryScreen`**: every stored fact, tagged by source, editable and
+  deletable, plus manual add and clear-all — memory is visible and
+  correctable, not a black box.
+- **`useLiveSession`**: the continuous-session mechanics (previously
+  living only in `ConversationScreen`) extracted into a shared hook so
+  onboarding reuses tested logic instead of a second hand-written copy.
+
+**What's unverified about this phase specifically**, beyond the
+cumulative caveats above:
+- The onboarding interview itself has not been run against a real
+  Gemini Live session — same category of gap as Phase 4's continuous-
+  mode rewrite, for the same reason (no microphone/emulator in this
+  sandbox).
+- `extractMemoryFacts`'s prompt has never seen a real transcript or a
+  real model response — whether the facts it proposes are actually
+  good (specific and useful, not vague or repetitive) can only be
+  judged by using the app and checking the Memory screen after a few
+  real conversations.
+- The `gemini-flash-latest` alias is deliberately un-pinned (see the
+  commit for why) — if extraction quality changes noticeably, that's
+  the first thing to check.
