@@ -8,6 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const SAVE_HISTORY_KEY = '@donna/save_conversation_history';
 const AMBIENT_MODE_ENABLED_KEY = '@donna/ambient_mode_enabled';
 const AMBIENT_MODE_CONFIRMED_KEY = '@donna/ambient_mode_confirmed_v1';
+const ONBOARDING_COMPLETE_KEY = '@donna/onboarding_complete_v1';
 
 /**
  * Whether Donna should keep a local record of past conversations.
@@ -63,5 +64,27 @@ export async function setAmbientModeConfirmed(
   await AsyncStorage.setItem(
     AMBIENT_MODE_CONFIRMED_KEY,
     confirmed ? 'true' : 'false',
+  );
+}
+
+/**
+ * Whether the user has been through (or explicitly skipped) the
+ * "getting to know you" onboarding interview at least once. Gates
+ * whether `RootNavigator` routes a freshly-signed-in user into
+ * `OnboardingScreen` before the main app — see `AuthContext.tsx`,
+ * which reads this once per sign-in and exposes it as
+ * `onboardingComplete`.
+ */
+export async function getOnboardingComplete(): Promise<boolean> {
+  const value = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY);
+  return value === 'true';
+}
+
+export async function setOnboardingComplete(
+  complete: boolean,
+): Promise<void> {
+  await AsyncStorage.setItem(
+    ONBOARDING_COMPLETE_KEY,
+    complete ? 'true' : 'false',
   );
 }

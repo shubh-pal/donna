@@ -13,6 +13,7 @@ import WelcomeScreen from '../screens/WelcomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 import ConversationScreen from '../screens/ConversationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import HistoryDetailScreen from '../screens/HistoryDetailScreen';
@@ -20,6 +21,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import APIKeyScreen from '../screens/APIKeyScreen';
 import AmbientModeScreen from '../screens/AmbientModeScreen';
 import VoicePersonaScreen from '../screens/VoicePersonaScreen';
+import MemoryScreen from '../screens/MemoryScreen';
 import PrivacyScreen from '../screens/PrivacyScreen';
 import AboutScreen from '../screens/AboutScreen';
 import { AmbientModeProvider } from '../context/AmbientModeContext';
@@ -101,6 +103,7 @@ function SettingsNavigator() {
       <SettingsStack.Screen name="APIKey" component={APIKeyScreen} />
       <SettingsStack.Screen name="AmbientMode" component={AmbientModeScreen} />
       <SettingsStack.Screen name="VoicePersona" component={VoicePersonaScreen} />
+      <SettingsStack.Screen name="Memory" component={MemoryScreen} />
       <SettingsStack.Screen name="Privacy" component={PrivacyScreen} />
       <SettingsStack.Screen name="About" component={AboutScreen} />
     </SettingsStack.Navigator>
@@ -211,16 +214,24 @@ function LoadingScreen() {
 }
 
 export default function RootNavigator() {
-  const { user, initializing } = useAuth();
+  const { user, initializing, onboardingComplete } = useAuth();
+
+  // Once signed in, `onboardingComplete` starts `null` while it's being
+  // read from storage — treated the same as `initializing` (show the
+  // loading screen) rather than flashing either the interview or the
+  // main app before the real answer is known.
+  const stillResolvingOnboarding = Boolean(user) && onboardingComplete === null;
 
   return (
     <NavigationContainer theme={navigationTheme}>
-      {initializing ? (
+      {initializing || stillResolvingOnboarding ? (
         <LoadingScreen />
-      ) : user ? (
-        <AppTabs />
-      ) : (
+      ) : !user ? (
         <AuthNavigator />
+      ) : !onboardingComplete ? (
+        <OnboardingScreen />
+      ) : (
+        <AppTabs />
       )}
     </NavigationContainer>
   );
