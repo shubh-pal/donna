@@ -11,6 +11,7 @@ import { colors, radius, spacing } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
 import { signOutUser } from '../config/authService';
 import { getGeminiApiKey } from '../config/apiKeyStore';
+import { listFacts } from '../config/memoryStore';
 import { useAmbientModeContext } from '../context/AmbientModeContext';
 import { usePermissionStatuses } from '../hooks/usePermissionStatuses';
 import type { SettingsStackParamList } from '../navigation/types';
@@ -18,15 +19,17 @@ import type { SettingsStackParamList } from '../navigation/types';
 type Props = NativeStackScreenProps<SettingsStackParamList, 'SettingsHome'>;
 
 export default function SettingsScreen({ navigation }: Props) {
-  const { user } = useAuth();
+  const { user, resetOnboarding } = useAuth();
   const { enabled: ambientEnabled } = useAmbientModeContext();
   const { statuses, openSettings } = usePermissionStatuses();
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [memoryCount, setMemoryCount] = useState(0);
   const [signingOut, setSigningOut] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       getGeminiApiKey().then(key => setHasApiKey(Boolean(key)));
+      listFacts().then(facts => setMemoryCount(facts.length));
     }, []),
   );
 
@@ -87,6 +90,17 @@ export default function SettingsScreen({ navigation }: Props) {
           />
           <View style={styles.divider} />
           <NavRow
+            label="Memory"
+            value={
+              <StatusPill
+                label={memoryCount > 0 ? `${memoryCount} facts` : 'Empty'}
+                tone={memoryCount > 0 ? 'success' : 'muted'}
+              />
+            }
+            onPress={() => navigation.navigate('Memory')}
+          />
+          <View style={styles.divider} />
+          <NavRow
             label="Notifications"
             value={
               <StatusPill
@@ -103,6 +117,12 @@ export default function SettingsScreen({ navigation }: Props) {
           <NavRow label="Privacy" onPress={() => navigation.navigate('Privacy')} />
           <View style={styles.divider} />
           <NavRow label="About Donna" onPress={() => navigation.navigate('About')} />
+          <View style={styles.divider} />
+          <NavRow
+            label="Redo Getting-to-Know-You Interview"
+            onPress={resetOnboarding}
+            showChevron={false}
+          />
         </View>
 
         <PrimaryButton

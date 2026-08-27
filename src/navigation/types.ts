@@ -20,6 +20,7 @@ export type SettingsStackParamList = {
   APIKey: undefined;
   AmbientMode: undefined;
   VoicePersona: undefined;
+  Memory: undefined;
   Privacy: undefined;
   About: undefined;
 };
